@@ -1,0 +1,29 @@
+# <type>(<scope>): <subject>
+#
+# Types:
+#   feat     -> new behavior/feature
+#   fix      -> bug fix
+#   refactor -> code change without behavior change
+#   perf     -> performance improvement
+#   test     -> tests only
+#   docs     -> documentation only
+#   chore    -> maintenance/build/tooling
+#
+# Rules:
+# - Keep subject <= 72 chars
+# - Use imperative voice (e.g. "add", "fix", "remove")
+# - No trailing period
+# - Prefer lowercase subject
+#
+# Why:
+# - <business or technical reason>
+#
+# What:
+# - <main change 1>
+# - <main change 2>
+#
+# Validation:
+# - <tests/checks executed>
+#
+# Refs:
+# - <issue/pr/task id, optional>
