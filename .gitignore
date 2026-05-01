@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# IDE/editor
+.idea/
+.vscode/
+.cursor/
+*.iml
+
+# Java/Gradle/Maven build artifacts
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+
+# Python virtual environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Generated data and experiment outputs
+files/output/
+generated_input.json
