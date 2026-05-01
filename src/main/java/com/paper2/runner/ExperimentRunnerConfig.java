@@ -6,12 +6,14 @@ import lombok.Data;
 
 
 /**
- * Configuration for batch experiment runs.
- * <p>
- * Input: derived from each experiment's {@code amountOfDepots} ({@code files/input/<x>_depot}).
- * Output: derived from {@link #experiments} (one folder per experiment).
- * Instances: stems or file names; the {@code .json} suffix is applied by
- * {@link ExperimentManager#resolveInstanceFileNames()}.
+ * Static knobs for {@link ExperimentRunner}: which instances and experiments to run, and ForkJoinPool parallelism.
+ *
+ * <p>Instances listed in {@link #instances} are resolved by {@link ExperimentManager#resolveInstanceFileNames()}
+ * ({@code .json} appended when missing). An empty {@link #instances} list causes the runner to process every
+ * {@code *.json} file under {@link ExperimentManager#INPUT_ROOT}.
+ *
+ * <p>{@link #experiments} lists experiment JSON file names under {@link ExperimentManager#EXPERIMENTS_ROOT}; when empty,
+ * every {@code *.json} there is run (sorted). Each experiment writes under {@code files/output/} using that file’s stem.
  */
 @Data
 public class ExperimentRunnerConfig {
@@ -19,9 +21,13 @@ public class ExperimentRunnerConfig {
      * Base names of instances to run (e.g. {@code "example"} or {@code "example.json"}).
      * If empty, every {@code *.json} under the resolved input folder is executed.
      */
-    public static List<String> instances = List.of("example_input");
+    public static List<String> instances = List.of();
 
-    public static List<String> experiments = List.of("example_experiment");
+    /**
+     * Experiment JSON files under {@link ExperimentManager#EXPERIMENTS_ROOT} (with or without {@code .json}).
+     * If empty, {@link ExperimentRunner} runs every {@code *.json} in that folder (sorted).
+     */
+    public static List<String> experiments = List.of();
 
     /**
      * Parallelism for {@link java.util.concurrent.ForkJoinPool}. If {@code null} or

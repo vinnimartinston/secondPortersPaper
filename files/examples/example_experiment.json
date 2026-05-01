@@ -1,4 +1,18 @@
 {
-  "amountOfDepots": 3,
-  "penalty": 100000
+  "penalty": 100000,
+  "overWriteInitialWheelchairInventory": false,
+  "depots": [
+    {
+      "id": 1,
+      "initialWheelchairInventory": 100
+    },
+    {
+      "id": 2,
+      "initialWheelchairInventory": 100
+    },
+    {
+      "id": 3,
+      "initialWheelchairInventory": 100
+    }
+  ]
 }

@@ -1,6 +1,6 @@
 # Metrics JSON file format (`*_metrics.json`)
 
-Aggregated metrics computed by [SolutionMetricsCalculator](../src/main/java/com/paper2/metrics/SolutionMetricsCalculator.java) from final schedules and input. Example: [example_metrics.json](../files/output/experiment/example_metrics.json).
+Aggregated metrics computed by [SolutionMetricsCalculator](../src/main/java/com/paper2/metrics/SolutionMetricsCalculator.java) from final schedules and input. Example: [example_metrics.json](../files/examples/example_metrics.json).
 
 Main mapping: [ExperimentMetricsDto](../src/main/java/com/paper2/dto/metrics/ExperimentMetricsDto.java).
 

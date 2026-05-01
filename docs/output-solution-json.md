@@ -1,6 +1,6 @@
 # Solution JSON file format (`*_solution.json`)
 
-Export of the final solution after simulation, produced by [SolutionSerializer](../src/main/java/com/paper2/serialization/SolutionSerializer.java) (e.g. [example_solution.json](../files/output/experiment/example_solution.json)).
+Export of the final solution after simulation, produced by [SolutionSerializer](../src/main/java/com/paper2/serialization/SolutionSerializer.java). Example: [example_solution.json](../files/examples/example_solution.json).
 
 ## Root document
 
