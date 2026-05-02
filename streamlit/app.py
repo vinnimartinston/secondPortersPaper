@@ -52,6 +52,106 @@ def list_solution_files(folder: Path) -> list[Path]:
     return sorted(folder.glob("*_solution.json"), key=lambda p: p.name.lower())
 
 
+def list_metrics_files(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        return []
+    return sorted(folder.glob("*_metrics.json"), key=lambda p: p.name.lower())
+
+
+def solution_stem_for_metrics(solution_filename: str) -> str:
+    """800N1SC3DEP20RT40CH1REP_solution.json -> 800N1SC3DEP20RT40CH1REP_metrics.json base."""
+    if solution_filename.endswith("_solution.json"):
+        return solution_filename[: -len("_solution.json")]
+    return Path(solution_filename).stem.replace("_solution", "")
+
+
+def metrics_filename_for_solution(solution_filename: str) -> str:
+    return f"{solution_stem_for_metrics(solution_filename)}_metrics.json"
+
+
+@st.cache_data(show_spinner=False)
+def load_metrics_json_cached(raw: str) -> dict:
+    return json.loads(raw)
+
+
+def extract_comparison_metrics(data: dict) -> dict[str, float | None]:
+    """Seven metrics used in the cross-folder comparison table."""
+    tard = data.get("tardiness") or {}
+    resp = data.get("response") or {}
+    sta = data.get("scheduleTimeAggregates") or {}
+    return {
+        "meanUnweightedTardinessMinutesAllPatients": tard.get("meanUnweightedTardinessMinutesAllPatients"),
+        "meanResponseMinutesAllPatients": resp.get("meanResponseMinutesAllPatients"),
+        "meanDurationActiveSeconds": sta.get("meanDurationActiveSeconds"),
+        "maxDurationSeconds": sta.get("maxDurationSeconds"),
+        "fleetTravelShare": sta.get("fleetTravelShare"),
+        "fleetTransportShare": sta.get("fleetTransportShare"),
+        "fleetIdleShare": sta.get("fleetIdleShare"),
+    }
+
+
+COMPARISON_METRIC_LABELS: list[tuple[str, str]] = [
+    ("meanUnweightedTardinessMinutesAllPatients", "meanUnweightedTardinessMinutesAllPatients"),
+    ("meanResponseMinutesAllPatients", "meanResponseMinutesAllPatients"),
+    ("meanDurationActiveSeconds", "meanDurationActiveSeconds"),
+    ("maxDurationSeconds", "maxDurationSeconds"),
+    ("fleetTravelShare", "fleetTravelShare"),
+    ("fleetTransportShare", "fleetTransportShare"),
+    ("fleetIdleShare", "fleetIdleShare"),
+]
+
+
+def folder_metrics_mean_series(folder: Path) -> pd.Series:
+    paths = list_metrics_files(folder)
+    if not paths:
+        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
+    rows = []
+    for mp in paths:
+        try:
+            raw = mp.read_text(encoding="utf-8")
+            data = load_metrics_json_cached(raw)
+        except (json.JSONDecodeError, OSError):
+            continue
+        rows.append(extract_comparison_metrics(data))
+    if not rows:
+        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
+    df = pd.DataFrame(rows)
+    return df.mean(numeric_only=True)
+
+
+def folder_metrics_for_solution_file(folder: Path, solution_filename: str) -> pd.Series:
+    mf = metrics_filename_for_solution(solution_filename)
+    mp = folder / mf
+    if not mp.is_file():
+        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
+    try:
+        data = load_metrics_json_cached(mp.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
+    row = extract_comparison_metrics(data)
+    return pd.Series({k: (float(v) if v is not None else np.nan) for k, v in row.items()}, dtype=float)
+
+
+def build_comparison_table(
+    folder_names: list[str],
+    *,
+    per_solution: bool,
+    solution_filename: str | None,
+) -> pd.DataFrame:
+    """Rows = metrics, columns = folder names."""
+    index = [label for _, label in COMPARISON_METRIC_LABELS]
+    keys = [k for k, _ in COMPARISON_METRIC_LABELS]
+    cols: dict[str, list[float]] = {}
+    for name in folder_names:
+        fp = OUTPUT_ROOT / name
+        if per_solution and solution_filename:
+            s = folder_metrics_for_solution_file(fp, solution_filename)
+        else:
+            s = folder_metrics_mean_series(fp)
+        cols[name] = [float(s.get(k, np.nan)) for k in keys]
+    return pd.DataFrame(cols, index=index)
+
+
 def all_schedule_row_labels(final_schedules: list) -> list[str]:
     """One Y-axis label per schedule in order of appearance (all schedules, including empty)."""
     labels: list[str] = []
@@ -299,27 +399,52 @@ def main() -> None:
     default_folder_name = "experiment" if any(p.name == "experiment" for p in subfolders) else subfolders[0].name
     folder_names = [p.name for p in subfolders]
     default_idx = folder_names.index(default_folder_name) if default_folder_name in folder_names else 0
-    chosen_folder_name = st.selectbox(
-        "Output folder",
-        options=folder_names,
-        index=default_idx,
-        help=f"Subfolders of `{OUTPUT_ROOT}`",
+    default_compare = (
+        [default_folder_name]
+        if default_folder_name in folder_names
+        else ([folder_names[0]] if folder_names else [])
     )
-    folder_path = OUTPUT_ROOT / chosen_folder_name
-    solution_files = list_solution_files(folder_path)
-    if not solution_files:
-        st.warning(f"No `*_solution.json` files in `{folder_path}`.")
-        return
 
-    names = [p.name for p in solution_files]
-    default_file = "example_solution.json" if "example_solution.json" in names else names[0]
-    file_idx = names.index(default_file) if default_file in names else 0
-    chosen_file = st.selectbox(
-        "Solution file",
-        options=names,
-        index=file_idx,
-        help="Files matching *_solution.json in the selected folder",
-    )
+    with st.sidebar:
+        st.subheader("Comparison")
+        compare_folders = st.multiselect(
+            "Folders (table columns)",
+            options=folder_names,
+            default=default_compare,
+            help="Each column is one output subfolder; values are averages over all *_metrics.json unless filtered below.",
+        )
+        comparison_table_mode = st.radio(
+            "Comparison table mode",
+            ["Folder average", "Selected solution"],
+            index=0,
+            horizontal=True,
+            help="Folder average: mean over every *_metrics.json in each column folder. "
+            "Selected solution: same metrics from the file matching the solution chosen below.",
+        )
+
+        st.divider()
+        st.subheader("Gantt & charts")
+        chosen_folder_name = st.selectbox(
+            "Output folder",
+            options=folder_names,
+            index=default_idx,
+            help=f"Subfolders of `{OUTPUT_ROOT}` — used for Gantt and depot plots.",
+        )
+        folder_path = OUTPUT_ROOT / chosen_folder_name
+        solution_files = list_solution_files(folder_path)
+        if not solution_files:
+            st.warning(f"No `*_solution.json` in `{folder_path}`.")
+            return
+
+        names = [p.name for p in solution_files]
+        default_file = "example_solution.json" if "example_solution.json" in names else names[0]
+        file_idx = names.index(default_file) if default_file in names else 0
+        chosen_file = st.selectbox(
+            "Solution file",
+            options=names,
+            index=file_idx,
+            help="Files matching *_solution.json in the selected folder",
+        )
     p = folder_path / chosen_file
     if not p.is_file():
         st.error(f"File not found: {p}")
@@ -338,6 +463,28 @@ def main() -> None:
         f"Simulation clock: **{data.get('simulatorClock', '?')}** · "
         f"Objective: **{obj_val}**"
     )
+
+    per_solution_table = comparison_table_mode == "Selected solution"
+    if compare_folders:
+        st.subheader("Metrics comparison")
+        if per_solution_table:
+            st.caption(
+                f"Columns = folders selected for comparison. Values = **{chosen_file}** → "
+                f"`{metrics_filename_for_solution(chosen_file)}` in each folder (mean across files is not used)."
+            )
+        else:
+            st.caption(
+                "Columns = folders selected for comparison. Each cell = **mean** over all "
+                "`*_metrics.json` in that folder (aggregate of all solution runs in the folder)."
+            )
+        cmp_df = build_comparison_table(
+            compare_folders,
+            per_solution=per_solution_table,
+            solution_filename=chosen_file if per_solution_table else None,
+        )
+        st.dataframe(cmp_df.round(4), use_container_width=True)
+    else:
+        st.info("Pick at least one folder under **Comparison** in the sidebar to show the metrics table.")
 
     final_schedules = data.get("finalSchedules") or []
     y_labels = all_schedule_row_labels(final_schedules)

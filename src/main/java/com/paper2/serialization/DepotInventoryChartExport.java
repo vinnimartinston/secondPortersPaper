@@ -28,6 +28,7 @@ import com.paper2.dto.solution.BalanceStepDto;
 import com.paper2.dto.solution.chart.DepotInventoryChartDepotDto;
 import com.paper2.dto.solution.chart.DepotInventoryHorizonSeriesDto;
 import com.paper2.dto.solution.chart.SolutionDepotInventoryChartDto;
+import com.paper2.metrics.ScheduleTimeFormat;
 
 /**
  * Exports per-depot wheelchair inventory over time as JSON (horizons + balance steps) and as a JPEG chart image
@@ -55,11 +56,11 @@ public final class DepotInventoryChartExport {
 
         SolutionDepotInventoryChartDto root = new SolutionDepotInventoryChartDto();
         root.setSimulatorClockSeconds(simSec);
-        root.setSimulatorClock(formatClock(simSec));
+        root.setSimulatorClock(ScheduleTimeFormat.clockFromBoundedSeconds(simSec));
         root.setIterationAnchorSeconds(anchor);
-        root.setIterationAnchorClock(formatClock(anchor));
+        root.setIterationAnchorClock(ScheduleTimeFormat.clockFromBoundedSeconds(anchor));
         root.setScheduleStartTimeSeconds(DomainConstants.SCHEDULE_START_TIME_SECONDS);
-        root.setScheduleStartClock(formatClock(DomainConstants.SCHEDULE_START_TIME_SECONDS));
+        root.setScheduleStartClock(ScheduleTimeFormat.clockFromBoundedSeconds(DomainConstants.SCHEDULE_START_TIME_SECONDS));
 
         List<Depot> depots = solution.getDepots() != null ? solution.getDepots() : List.of();
         List<DepotInventoryChartDepotDto> rows = new ArrayList<>();
@@ -128,16 +129,16 @@ public final class DepotInventoryChartExport {
             DepotBalanceTimeline fin, int windowStart, int windowEndExclusive) {
         DepotInventoryHorizonSeriesDto dto = new DepotInventoryHorizonSeriesDto();
         dto.setWindowStartSeconds(windowStart);
-        dto.setWindowStartClock(formatClock(windowStart));
+        dto.setWindowStartClock(ScheduleTimeFormat.clockFromBoundedSeconds(windowStart));
         dto.setWindowEndExclusiveSeconds(windowEndExclusive);
         if (windowEndExclusive <= windowStart) {
-            dto.setWindowEndLastIncludedClock(formatClock(windowStart));
+            dto.setWindowEndLastIncludedClock(ScheduleTimeFormat.clockFromBoundedSeconds(windowStart));
             dto.setMinBalanceInWindow(0);
             dto.setMaxBalanceInWindow(0);
             dto.setBalanceSteps(List.of());
             return dto;
         }
-        dto.setWindowEndLastIncludedClock(formatClock(windowEndExclusive - 1));
+        dto.setWindowEndLastIncludedClock(ScheduleTimeFormat.clockFromBoundedSeconds(windowEndExclusive - 1));
         if (fin == null) {
             dto.setMinBalanceInWindow(0);
             dto.setMaxBalanceInWindow(0);
@@ -159,7 +160,7 @@ public final class DepotInventoryChartExport {
             long bal = fin.balanceAtOrBefore(t);
             min = Math.min(min, bal);
             max = Math.max(max, bal);
-            steps.add(new BalanceStepDto(t, formatClock(t), bal));
+            steps.add(new BalanceStepDto(t, ScheduleTimeFormat.clockFromBoundedSeconds(t), bal));
         }
         if (min == Long.MAX_VALUE) {
             min = 0;
@@ -179,16 +180,16 @@ public final class DepotInventoryChartExport {
             int horizonEndExclusive) {
         DepotInventoryHorizonSeriesDto dto = new DepotInventoryHorizonSeriesDto();
         dto.setWindowStartSeconds(anchor);
-        dto.setWindowStartClock(formatClock(anchor));
+        dto.setWindowStartClock(ScheduleTimeFormat.clockFromBoundedSeconds(anchor));
         dto.setWindowEndExclusiveSeconds(horizonEndExclusive);
         if (horizonEndExclusive <= anchor) {
-            dto.setWindowEndLastIncludedClock(formatClock(anchor));
+            dto.setWindowEndLastIncludedClock(ScheduleTimeFormat.clockFromBoundedSeconds(anchor));
             dto.setMinBalanceInWindow(0);
             dto.setMaxBalanceInWindow(0);
             dto.setBalanceSteps(List.of());
             return dto;
         }
-        dto.setWindowEndLastIncludedClock(formatClock(horizonEndExclusive - 1));
+        dto.setWindowEndLastIncludedClock(ScheduleTimeFormat.clockFromBoundedSeconds(horizonEndExclusive - 1));
         if (work == null) {
             dto.setMinBalanceInWindow(0);
             dto.setMaxBalanceInWindow(0);
@@ -210,7 +211,7 @@ public final class DepotInventoryChartExport {
             long bal = state.totalBalanceAtInWorkingHorizon(depotId, t);
             min = Math.min(min, bal);
             max = Math.max(max, bal);
-            steps.add(new BalanceStepDto(t, formatClock(t), bal));
+            steps.add(new BalanceStepDto(t, ScheduleTimeFormat.clockFromBoundedSeconds(t), bal));
         }
         if (min == Long.MAX_VALUE) {
             min = 0;
@@ -220,11 +221,6 @@ public final class DepotInventoryChartExport {
         dto.setMaxBalanceInWindow(max);
         dto.setBalanceSteps(steps);
         return dto;
-    }
-
-    private static String formatClock(int secondsSinceMidnight) {
-        int sec = Math.min(Math.max(0, secondsSinceMidnight), DomainConstants.MAX_TIME_SECONDS);
-        return new TimeObject(sec).toString();
     }
 
     private static BufferedImage renderJpeg(SolutionDepotInventoryChartDto dto) {

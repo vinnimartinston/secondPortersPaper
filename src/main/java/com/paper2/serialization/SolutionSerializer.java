@@ -44,6 +44,8 @@
     import com.paper2.metrics.DepotInventoryHorizonSummarizer;
     import com.paper2.metrics.PorterScheduleRouteMetrics;
     import com.paper2.metrics.ScheduleTimeFormat;
+    import com.paper2.metrics.inventory.DepotSelectionByObjective;
+    import com.paper2.metrics.inventory.WheelchairDepotEdgeRules;
     import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
     import com.paper2.simulator.solver.localsearch.TotalUnweightedTardinessObjective;
 
@@ -53,8 +55,6 @@
      * (dummy excluded).
      */
 public final class SolutionSerializer {
-
-    private static final String CLOCK_ZERO = "00:00:00";
 
     private static final ObjectMapper MAPPER = createMapper();
 
@@ -90,7 +90,7 @@ public final class SolutionSerializer {
         public static SolutionResultDto toDto(Solution solution) {
             assertExportPatientPartition(solution);
             List<FinalScheduleSnapshotDto> finalSnapshots = finalSchedulesToDtos(solution);
-            String clockStr = formatClock(solution.getSimulatorClock());
+            String clockStr = ScheduleTimeFormat.clockOrZero(solution.getSimulatorClock());
             DepotInventorySerialization s = computeDepotInventorySerialization(solution);
             SolutionObjectiveFunctionDto objectiveFunction =
                     new SolutionObjectiveFunctionDto(
@@ -138,12 +138,19 @@ public final class SolutionSerializer {
         private static DepotInventorySerialization computeDepotInventorySerialization(Solution solution) {
             List<Depot> domainDepots = solution.getDepots() != null ? solution.getDepots() : List.of();
             int shiftStartSeconds = DomainConstants.SCHEDULE_START_TIME_SECONDS;
-            String shiftStartClock = formatClock(new TimeObject(shiftStartSeconds));
+            String shiftStartClock =
+                    ScheduleTimeFormat.clockOrZero(new TimeObject(shiftStartSeconds));
+            int evaluationWindowStartSeconds =
+                    WheelchairDepotViolationSecondsCalculator.evaluationWindowStartSeconds(solution);
+            String evaluationWindowStartClock =
+                    ScheduleTimeFormat.clockOrZero(new TimeObject(evaluationWindowStartSeconds));
             int windowEndExclusiveSeconds =
                     WheelchairDepotViolationSecondsCalculator.evaluationWindowEndExclusiveSeconds(solution);
             String lastIncludedClock;
             if (windowEndExclusiveSeconds > shiftStartSeconds) {
-                lastIncludedClock = formatClock(new TimeObject(windowEndExclusiveSeconds - 1));
+                lastIncludedClock =
+                        ScheduleTimeFormat.clockOrZero(
+                                new TimeObject(windowEndExclusiveSeconds - 1));
             } else {
                 lastIncludedClock = shiftStartClock;
             }
@@ -186,8 +193,8 @@ public final class SolutionSerializer {
             }
 
             return new DepotInventorySerialization(
-                    shiftStartSeconds,
-                    shiftStartClock,
+                    evaluationWindowStartSeconds,
+                    evaluationWindowStartClock,
                     windowEndExclusiveSeconds,
                     lastIncludedClock,
                     penaltyCoefficient,
@@ -279,15 +286,19 @@ public final class SolutionSerializer {
             if (solution.getFinalSchedules() == null) {
                 return out;
             }
+            DepotSelectionByObjective.DepotLegPlan depotLegPlan =
+                    DepotSelectionByObjective.buildPlan(
+                            solution,
+                            DepotSelectionByObjective.chainOverridesFromFinalSchedulesByPorterId(solution));
             for (FinalSchedule fs : solution.getFinalSchedules()) {
                 int porterId = fs.getPorter() != null ? fs.getPorter().getId() : -1;
-                out.add(toFinalScheduleSnapshotDto(solution, fs, porterId));
+                out.add(toFinalScheduleSnapshotDto(solution, fs, porterId, depotLegPlan));
             }
             return out;
         }
 
         private static FinalScheduleSnapshotDto toFinalScheduleSnapshotDto(
-                Solution solution, FinalSchedule fs, int porterId) {
+                Solution solution, FinalSchedule fs, int porterId, DepotSelectionByObjective.DepotLegPlan depotLegPlan) {
             List<Patient> pts = fs.getPatients();
             Patient dummy = pts != null && !pts.isEmpty() ? pts.get(0) : null;
 
@@ -313,6 +324,28 @@ public final class SolutionSerializer {
                                     totalWorkedSec,
                                     ScheduleTimeFormat.durationHms(
                                             (int) Math.min(totalWorkedSec, Integer.MAX_VALUE))));
+
+            if (pts != null && fs.getPorter() != null) {
+                for (int i = 0; i < pts.size(); i++) {
+                    Patient from = pts.get(i);
+                    if (from == null || from.isDummy()) {
+                        continue;
+                    }
+                    Patient to = i + 1 < pts.size() ? pts.get(i + 1) : null;
+                    int legIndex = i + 1;
+                    int depotId =
+                            WheelchairDepotEdgeRules.depotIdVisitedBeforeNext(
+                                    from,
+                                    to,
+                                    fs.getPorter(),
+                                    solution.getDepots(),
+                                    solution.getGraph(),
+                                    porterId,
+                                    legIndex,
+                                    depotLegPlan);
+                    from.setDepotIdVisitedBeforeNext(depotId);
+                }
+            }
 
             List<PatientSolutionSnapshotDto> patients = new ArrayList<>();
             int sequence = 1;
@@ -354,7 +387,7 @@ public final class SolutionSerializer {
 
         /** Route start in summary: {@code dummy.start} or default shift start. */
         private static String summaryStartClock(Patient dummy) {
-            return formatClock(new TimeObject(summaryStartSeconds(dummy)));
+            return ScheduleTimeFormat.clockOrZero(new TimeObject(summaryStartSeconds(dummy)));
         }
 
         /** Seconds since midnight for route start (same basis as {@link #summaryStartClock}). */
@@ -373,11 +406,11 @@ public final class SolutionSerializer {
             if (solution.getSchedules() == null
                     || porterId < 0
                     || porterId >= solution.getSchedules().size()) {
-            return CLOCK_ZERO;
+                return ScheduleTimeFormat.clockOrZero(null);
+            }
+            var end = solution.getSchedules().get(porterId).getTime().getEndTime();
+            return ScheduleTimeFormat.clockOrZero(end);
         }
-        var end = solution.getSchedules().get(porterId).getTime().getEndTime();
-        return formatClock(end);
-    }
 
         private static PatientSolutionSnapshotDto toPatientSolutionSnapshot(Patient p, int sequence) {
             TimeProperties t = p.getTime();
@@ -387,13 +420,13 @@ public final class SolutionSerializer {
             PriorityDto priorityDto = new PriorityDto(pr.getPriority(), pr.getWeight());
             PatientSolutionTimesDto timeDto =
                     new PatientSolutionTimesDto(
-                            formatClock(t.getTimeAsked()),
-                            formatClock(t.getTravelTime()),
-                            formatClock(t.getStartTime()),
-                            formatClock(t.getTransportTime()),
-                            formatClock(t.getEndTime()),
-                            formatClock(t.getDueDate()),
-                            formatClock(t.getLateness()),
+                            ScheduleTimeFormat.clockOrZero(t.getTimeAsked()),
+                            ScheduleTimeFormat.clockOrZero(t.getTravelTime()),
+                            ScheduleTimeFormat.clockOrZero(t.getStartTime()),
+                            ScheduleTimeFormat.clockOrZero(t.getTransportTime()),
+                            ScheduleTimeFormat.clockOrZero(t.getEndTime()),
+                            ScheduleTimeFormat.clockOrZero(t.getDueDate()),
+                            ScheduleTimeFormat.clockOrZero(t.getLateness()),
                             formatResponseTime(t.getStartTime(), t.getTimeAsked()));
             var mobility = p.getMobilityAidPolicy();
             TransportModeDto transportMode =
@@ -404,18 +437,20 @@ public final class SolutionSerializer {
                                     mobility.isRetainEquipmentAtDestination(),
                                     mobility.isEquipmentPresentAtOrigin());
             return new PatientSolutionSnapshotDto(
-                    p.getId(), sequence, timeDto, transportMode, priorityDto, locationDto);
+                    p.getId(),
+                    sequence,
+                    timeDto,
+                    transportMode,
+                    priorityDto,
+                    locationDto,
+                    p.getDepotIdVisitedBeforeNext());
         }
-
-    private static String formatClock(TimeObject o) {
-        return o == null ? CLOCK_ZERO : o.toString();
-    }
 
     /** {@code start - timeAsked} as duration {@code HH:MM:SS}. */
     private static String formatResponseTime(TimeObject start, TimeObject timeAsked) {
         if (start == null || timeAsked == null) {
-            return CLOCK_ZERO;
+            return ScheduleTimeFormat.clockOrZero(null);
         }
-            return start.subtractTime(timeAsked).toString();
-        }
+        return start.subtractTime(timeAsked).toString();
     }
+}

@@ -8,6 +8,7 @@ import com.paper2.domain.Solution;
 import com.paper2.domain.TimeObject;
 import com.paper2.simulator.SimulationPolicy;
 import com.paper2.simulator.Solver;
+import com.paper2.simulator.debug.ObjectiveIterationTrace;
 import com.paper2.simulator.solver.LocalSearchSolver;
 
 /**
@@ -24,7 +25,9 @@ public class PolicyOne implements SimulationPolicy {
         Solver solver = new LocalSearchSolver();
         Solution solution = new Solution(input);
         this.indexNextPatient = input.getAmountOfPorters();
+        ObjectiveIterationTrace.beginTrace();
 
+        int onlineIteration = 0;
         while (shouldContinueOnlineLoop(input, solution)) {
             int iterationAnchorSeconds = solution.getSimulatorClock().getSeconds();
             solution.getInventoryState().setIterationAnchorSeconds(iterationAnchorSeconds);
@@ -32,6 +35,8 @@ public class PolicyOne implements SimulationPolicy {
             solution = solver.solve(solution);
             updateSimulatorClock(solution);
             appendFinalResults(solution);
+            onlineIteration++;
+            ObjectiveIterationTrace.appendAfterAppendFinalResults(onlineIteration, solution);
             solution.getInventoryState().rebuildFinalCommittedFromAllFinalSchedules(solution);
         }
 

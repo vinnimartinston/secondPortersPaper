@@ -17,17 +17,83 @@ import com.paper2.domain.Porter;
  */
 public final class WheelchairDepotEdgeRules {
 
+    /**
+     * Resolves which depot applies on a route leg when aggregating inventory / violations (see
+     * {@link com.paper2.metrics.inventory.DepotSelectionByObjective#resolver(DepotSelectionByObjective.DepotLegPlan, List, Graph)}).
+     */
+    @FunctionalInterface
+    public interface DepotPerLeg {
+        Depot depot(int scheduleIndex, int legIndex, Patient previous, Patient current);
+    }
+
     private WheelchairDepotEdgeRules() {}
 
     /**
-     * Chooses the depot minimizing travel time from the previous patient's location.
+     * Depot visited on the leg {@code from} → {@code to} when the porter must stop at a depot; {@code 0} if
+     * {@code to} is {@code null} or no depot visit applies (same rule as balance-change collection).
      */
-    public static Depot selectDepotForLeg(Patient previous, List<Depot> depots, Graph graph) {
-        Depot best = null;
-        int bestTravel = Integer.MAX_VALUE;
+    public static int depotIdVisitedBeforeNext(
+            Patient from, Patient to, Porter porter, List<Depot> depots, Graph graph) {
+        if (to == null || porter == null) {
+            return 0;
+        }
+        MobilityAidPolicy p1 = from.getMobilityAidPolicy();
+        MobilityAidPolicy p2 = to.getMobilityAidPolicy();
+        if (p1 == null || p2 == null) {
+            return 0;
+        }
+        if (!porter.shouldGoToDepot(p1, p2)) {
+            return 0;
+        }
         if (depots == null || graph == null) {
+            return 0;
+        }
+        Depot depot = selectDepotForLegMinTravel(from, depots, graph);
+        return depot == null ? 0 : depot.getId();
+    }
+
+    /**
+     * Depot id for export / annotation when an optional per-leg selector is used (e.g. objective-aware choice).
+     *
+     * @param legIndex index of {@code to} in the schedule node list (1 = first edge after dummy)
+     */
+    public static int depotIdVisitedBeforeNext(
+            Patient from,
+            Patient to,
+            Porter porter,
+            List<Depot> depots,
+            Graph graph,
+            int scheduleIndex,
+            int legIndex,
+            DepotSelectionByObjective.DepotLegPlan plan) {
+        if (to == null || porter == null) {
+            return 0;
+        }
+        MobilityAidPolicy p1 = from.getMobilityAidPolicy();
+        MobilityAidPolicy p2 = to.getMobilityAidPolicy();
+        if (p1 == null || p2 == null) {
+            return 0;
+        }
+        if (!porter.shouldGoToDepot(p1, p2)) {
+            return 0;
+        }
+        if (depots == null || graph == null) {
+            return 0;
+        }
+        Depot depot = DepotSelectionByObjective.depotForLeg(plan, scheduleIndex, legIndex, from, depots, graph);
+        if (depot == null) {
+            depot = selectDepotForLegMinTravel(from, depots, graph);
+        }
+        return depot.getId();
+    }
+
+    /** Minimum travel time from {@code previous}'s location (ties: lower depot id wins). */
+    public static Depot selectDepotForLegMinTravel(Patient previous, List<Depot> depots, Graph graph) {
+        if (previous == null || depots == null || graph == null) {
             return null;
         }
+        Depot best = null;
+        int bestTravel = Integer.MAX_VALUE;
         for (Depot depot : depots) {
             if (depot == null || depot.getLocation() == null) {
                 continue;
@@ -35,12 +101,18 @@ public final class WheelchairDepotEdgeRules {
             int travel =
                     graph.getTravelTimeBetweenTwoLocations(previous.getLocation(), depot.getLocation())
                             .getSeconds();
-            if (travel < bestTravel) {
+            if (travel < bestTravel || (travel == bestTravel && (best == null || depot.getId() < best.getId()))) {
                 bestTravel = travel;
                 best = depot;
             }
         }
         return best;
+    }
+
+    /** @deprecated Prefer {@link #selectDepotForLegMinTravel}; kept for call sites that only minimize travel. */
+    @Deprecated
+    public static Depot selectDepotForLeg(Patient previous, List<Depot> depots, Graph graph) {
+        return selectDepotForLegMinTravel(previous, depots, graph);
     }
 
     public static int arrivalSecondsAtDepot(Patient previous, Depot depot, Graph graph) {
@@ -58,33 +130,28 @@ public final class WheelchairDepotEdgeRules {
 
     /**
      * Net wheelchair change at the depot visit between consecutive patients on a route (wheelchair pool only).
+     * <p>
+     * Callers pass consecutive nodes in <em>route list order</em> (e.g. {@link com.paper2.domain.FinalSchedule}
+     * {@code patients}); do not use {@link Patient#isValid()} here — it reflects the working-chain {@code previous}
+     * link, which is often cleared after {@link com.paper2.domain.Schedule#resetStartPatient} while the same
+     * {@link Patient} instances remain on the final route list.
      */
     public static int netWheelchairDeltaAtDepotVisit(Patient previous, Patient current) {
-        int delta = 0;
-        if (requiresWheelchairPickupFromDepot(current)) {
-            delta -= 1;
+        if (previous == null || current == null) {
+            return 0;
         }
-        if (previous.isValid() && !previous.isDummy() && returnsWheelchairToDepotAfterService(previous)) {
-            delta += 1;
+        MobilityAidPolicy policyPrevious = previous.getMobilityAidPolicy();
+        MobilityAidPolicy policyCurrent = current.getMobilityAidPolicy();
+        if (policyPrevious == null || policyCurrent == null) {
+            return 0;
         }
-        return delta;
-    }
-
-    private static boolean requiresWheelchairPickupFromDepot(Patient patient) {
-        MobilityAidPolicy policy = patient.getMobilityAidPolicy();
-        return isWheelchairAid(policy) && !policy.isEquipmentPresentAtOrigin();
-    }
-
-    private static boolean returnsWheelchairToDepotAfterService(Patient previous) {
-        MobilityAidPolicy policy = previous.getMobilityAidPolicy();
-        return isWheelchairAid(policy) && !policy.isRetainEquipmentAtDestination();
-    }
-
-    private static boolean isWheelchairAid(MobilityAidPolicy policy) {
-        if (policy == null || policy.getAidType() == null) {
-            return false;
+        if (policyCurrent.isRequiresWheelchairPickupFromDepot(policyPrevious)) {
+            return -1;
         }
-        return policy.getAidType().toLowerCase().contains("wheelchair");
+        if (!previous.isDummy() && policyCurrent.isReturnsWheelchairToDepotAfterService(policyPrevious)) {
+            return 1;
+        }
+        return 0;
     }
 
     /**
@@ -92,6 +159,20 @@ public final class WheelchairDepotEdgeRules {
      */
     public static Map<Integer, List<WheelchairDepotBalanceChange>> collectBalanceChangesForChainNodes(
             List<Patient> nodes, Porter porter, List<Depot> depots, Graph graph) {
+        return collectBalanceChangesForChainNodes(nodes, porter, depots, graph, -1, null);
+    }
+
+    /**
+     * Same as {@link #collectBalanceChangesForChainNodes(List, Porter, List, Graph)} with per-leg depot resolution.
+     * When {@code legDepot} is {@code null}, travel-minimizing depots are used.
+     */
+    public static Map<Integer, List<WheelchairDepotBalanceChange>> collectBalanceChangesForChainNodes(
+            List<Patient> nodes,
+            Porter porter,
+            List<Depot> depots,
+            Graph graph,
+            int scheduleIndex,
+            DepotPerLeg legDepot) {
         Map<Integer, List<WheelchairDepotBalanceChange>> byDepot = new HashMap<>();
         if (porter == null || nodes == null || nodes.size() < 2 || depots == null || graph == null) {
             return byDepot;
@@ -107,7 +188,13 @@ public final class WheelchairDepotEdgeRules {
             if (!porter.shouldGoToDepot(previousPolicy, currentPolicy)) {
                 continue;
             }
-            Depot depot = selectDepotForLeg(previous, depots, graph);
+            Depot depot =
+                    legDepot != null
+                            ? legDepot.depot(scheduleIndex, index, previous, current)
+                            : selectDepotForLegMinTravel(previous, depots, graph);
+            if (depot == null) {
+                depot = selectDepotForLegMinTravel(previous, depots, graph);
+            }
             if (depot == null) {
                 continue;
             }

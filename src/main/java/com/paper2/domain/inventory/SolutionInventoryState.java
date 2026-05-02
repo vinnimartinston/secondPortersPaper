@@ -14,6 +14,7 @@ import com.paper2.domain.Porter;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.domain.TimeObject;
+import com.paper2.metrics.inventory.DepotSelectionByObjective;
 import com.paper2.metrics.inventory.WheelchairDepotEdgeRules;
 import com.paper2.metrics.inventory.WheelchairDepotEdgeRules.WheelchairDepotBalanceChange;
 
@@ -97,9 +98,21 @@ public final class SolutionInventoryState {
         if (solution.getSchedules() == null || depots == null || graph == null) {
             return;
         }
+        DepotSelectionByObjective.DepotLegPlan depotLegPlan =
+                DepotSelectionByObjective.buildPlan(solution, null);
+        WheelchairDepotEdgeRules.DepotPerLeg legDepot =
+                DepotSelectionByObjective.resolver(depotLegPlan, depots, graph);
         for (Schedule schedule : solution.getSchedules()) {
-            List<Patient> nodes = nodesFromSchedule(schedule);
-            accumulateWorkingFromChain(nodes, schedule.getPorter(), depots, graph, anchor, horizonEndExclusive);
+            List<Patient> nodes = schedule == null ? new ArrayList<>() : schedule.orderedPatientsFromStart();
+            accumulateWorkingFromChain(
+                    nodes,
+                    schedule.getPorter(),
+                    depots,
+                    graph,
+                    anchor,
+                    horizonEndExclusive,
+                    schedule.getId(),
+                    legDepot);
         }
     }
 
@@ -109,9 +122,12 @@ public final class SolutionInventoryState {
             List<Depot> depots,
             Graph graph,
             int anchor,
-            int horizonEndExclusive) {
+            int horizonEndExclusive,
+            int scheduleIndex,
+            WheelchairDepotEdgeRules.DepotPerLeg legDepot) {
         Map<Integer, List<WheelchairDepotBalanceChange>> byDepot =
-                WheelchairDepotEdgeRules.collectBalanceChangesForChainNodes(nodes, porter, depots, graph);
+                WheelchairDepotEdgeRules.collectBalanceChangesForChainNodes(
+                        nodes, porter, depots, graph, scheduleIndex, legDepot);
         for (Map.Entry<Integer, List<WheelchairDepotBalanceChange>> e : byDepot.entrySet()) {
             DepotBalanceTimeline w = workingIterationByDepotId.get(e.getKey());
             if (w == null) {
@@ -124,17 +140,6 @@ public final class SolutionInventoryState {
                 }
             }
         }
-    }
-
-    private static List<Patient> nodesFromSchedule(Schedule schedule) {
-        List<Patient> nodes = new ArrayList<>();
-        if (schedule == null || schedule.getStart() == null) {
-            return nodes;
-        }
-        for (Patient p = schedule.getStart(); p != null; p = p.getNext()) {
-            nodes.add(p);
-        }
-        return nodes;
     }
 
     /**
@@ -155,14 +160,21 @@ public final class SolutionInventoryState {
         if (solution.getFinalSchedules() == null || depots == null || graph == null) {
             return;
         }
+        DepotSelectionByObjective.DepotLegPlan depotLegPlan =
+                DepotSelectionByObjective.buildPlan(
+                        solution, DepotSelectionByObjective.chainOverridesFromFinalSchedulesByPorterId(solution));
+        WheelchairDepotEdgeRules.DepotPerLeg legDepot =
+                DepotSelectionByObjective.resolver(depotLegPlan, depots, graph);
         for (FinalSchedule fs : solution.getFinalSchedules()) {
             List<Patient> pts = fs.getPatients();
             if (pts == null || pts.size() < 2) {
                 continue;
             }
             Porter porter = fs.getPorter();
+            int scheduleIndex = porter.getId();
             Map<Integer, List<WheelchairDepotBalanceChange>> byDepot =
-                    WheelchairDepotEdgeRules.collectBalanceChangesForChainNodes(pts, porter, depots, graph);
+                    WheelchairDepotEdgeRules.collectBalanceChangesForChainNodes(
+                            pts, porter, depots, graph, scheduleIndex, legDepot);
             for (Map.Entry<Integer, List<WheelchairDepotBalanceChange>> e : byDepot.entrySet()) {
                 DepotBalanceTimeline fin = finalCommittedByDepotId.get(e.getKey());
                 if (fin == null) {

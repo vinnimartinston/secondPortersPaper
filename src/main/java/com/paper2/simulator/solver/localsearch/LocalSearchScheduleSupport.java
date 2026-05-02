@@ -3,11 +3,15 @@ package com.paper2.simulator.solver.localsearch;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.paper2.domain.Depot;
 import com.paper2.domain.Graph;
 import com.paper2.domain.Patient;
+import com.paper2.domain.Porter;
+import com.paper2.domain.RouteTiming;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.domain.TimeObject;
+import com.paper2.metrics.inventory.DepotSelectionByObjective;
 import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
 
 /**
@@ -22,11 +26,10 @@ public final class LocalSearchScheduleSupport {
      * Chain order: index 0 = dummy, 1… = real patients through the last ({@code next == null}).
      */
     public static List<Patient> orderedNodes(Schedule schedule) {
-        List<Patient> nodes = new ArrayList<>();
-        for (Patient p = schedule.getStart(); p != null; p = p.getNext()) {
-            nodes.add(p);
+        if (schedule == null) {
+            return new ArrayList<>();
         }
-        return nodes;
+        return schedule.orderedPatientsFromStart();
     }
 
     /** Updates {@code previous}/{@code next} pointers only, in list order. */
@@ -64,41 +67,73 @@ public final class LocalSearchScheduleSupport {
         return copies;
     }
 
-    public static void recomputeTimesFromDummy(Patient dummyHead, Graph graph, TimeObject simulatorClock) {
+    /**
+     * Recomputes {@code start}/{@code end} along the chain from the dummy; when {@code solution} and
+     * {@code scheduleId} are valid, travel uses depot detours per {@link Porter#shouldGoToDepot} and
+     * {@link DepotSelectionByObjective#buildPlan(Solution, java.util.List)} with this chain as override.
+     */
+    public static void recomputeTimesFromDummy(
+            Patient dummyHead, Graph graph, TimeObject simulatorClock, Solution solution, int scheduleId) {
         Patient first = dummyHead;
         if (first == null) {
             return;
         }
+        DepotSelectionByObjective.DepotLegPlan plan = null;
+        List<Depot> depots = null;
+        if (solution != null
+                && scheduleId >= 0
+                && solution.getSchedules() != null
+                && scheduleId < solution.getSchedules().size()
+                && solution.getDepots() != null
+                && !solution.getDepots().isEmpty()) {
+            depots = solution.getDepots();
+            List<Patient> trialChainForPlan = new ArrayList<>();
+            for (Patient x = dummyHead; x != null; x = x.getNext()) {
+                trialChainForPlan.add(x);
+            }
+            Patient curDirect = first.getNext();
+            while (curDirect != null) {
+                Patient prevD = curDirect.getPrevious();
+                TimeObject erD =
+                        RouteTiming.earliestStart(
+                                curDirect.getRequestedTime(), prevD.getEndTime(), simulatorClock);
+                TimeObject ttD =
+                        graph.getTravelTimeBetweenTwoLocations(prevD.getLocation(), curDirect.getLocation());
+                curDirect.updateTimeFromLastPatient(erD, ttD);
+                curDirect = curDirect.getNext();
+            }
+            List<List<Patient>> overrides =
+                    DepotSelectionByObjective.emptyChainOverrides(solution.getSchedules().size());
+            overrides.set(scheduleId, trialChainForPlan);
+            plan = DepotSelectionByObjective.buildPlan(solution, overrides);
+        }
         Patient current = first.getNext();
+        int legIndex = 0;
         while (current != null) {
             Patient previous = current.getPrevious();
-            TimeObject earliestReady = earliestReady(current.getRequestedTime(), previous.getEndTime(), simulatorClock);
+            TimeObject earliest =
+                    RouteTiming.earliestStart(
+                            current.getRequestedTime(), previous.getEndTime(), simulatorClock);
+            legIndex++;
+            Porter porter = solution.getSchedules().get(scheduleId).getPorter();
+            Depot depotForLeg = null;
+            if (plan != null && depots != null && porter != null) {
+                depotForLeg =
+                        DepotSelectionByObjective.depotForLeg(
+                                plan, scheduleId, legIndex, previous, depots, graph);
+            }
             TimeObject travelTime =
-                    graph.getTravelTimeBetweenTwoLocations(previous.getLocation(), current.getLocation());
-            current.updateTimeFromLastPatient(earliestReady, travelTime);
+                    RouteTiming.travelBetweenPatients(graph, previous, current, porter, depotForLeg);
+            current.updateTimeFromLastPatient(earliest, travelTime);
             current = current.getNext();
         }
-    }
-
-    private static TimeObject earliestReady(
-            TimeObject patientRequestedTime, TimeObject previousEndTime, TimeObject simulatorClock) {
-        return new TimeObject(
-                Math.max(
-                        Math.max(patientRequestedTime.getSeconds(), simulatorClock.getSeconds()),
-                        previousEndTime.getSeconds()));
     }
 
     /**
      * Sum of unweighted tardiness on non-dummy nodes (requires up-to-date times).
      */
     public static long tardinessSumOnNodes(List<Patient> nodes) {
-        long sum = 0;
-        for (Patient p : nodes) {
-            if (p != null && !p.isDummy()) {
-                sum += p.getTime().getLateness().getSeconds();
-            }
-        }
-        return sum;
+        return TotalUnweightedTardinessObjective.sumTardinessSeconds(nodes);
     }
 
     public static long tardinessSumOnSchedule(Schedule schedule) {
@@ -146,17 +181,20 @@ public final class LocalSearchScheduleSupport {
             return objectiveWithTrialChain(solution, scheduleId, trialCopy);
         }
         Patient dummy = trialCopy.get(0);
-        recomputeTimesFromDummy(dummy, solution.getGraph(), solution.getSimulatorClock());
+        recomputeTimesFromDummy(
+                dummy, solution.getGraph(), solution.getSimulatorClock(), solution, scheduleId);
         return objectiveWithTrialChain(solution, scheduleId, trialCopy);
     }
 
     public static long evaluateTwoTrialChains(
             Solution solution, int id1, List<Patient> c1, int id2, List<Patient> c2) {
         if (!c1.isEmpty()) {
-            recomputeTimesFromDummy(c1.get(0), solution.getGraph(), solution.getSimulatorClock());
+            recomputeTimesFromDummy(
+                    c1.get(0), solution.getGraph(), solution.getSimulatorClock(), solution, id1);
         }
         if (!c2.isEmpty()) {
-            recomputeTimesFromDummy(c2.get(0), solution.getGraph(), solution.getSimulatorClock());
+            recomputeTimesFromDummy(
+                    c2.get(0), solution.getGraph(), solution.getSimulatorClock(), solution, id2);
         }
         return objectiveWithTwoTrialChains(solution, id1, c1, id2, c2);
     }
@@ -171,7 +209,8 @@ public final class LocalSearchScheduleSupport {
                     + depotPenaltyTermForOverrides(solution, modifiedScheduleId, trialCopy);
         }
         Patient dummyHead = trialCopy.get(0);
-        recomputeTimesFromDummy(dummyHead, solution.getGraph(), solution.getSimulatorClock());
+        recomputeTimesFromDummy(
+                dummyHead, solution.getGraph(), solution.getSimulatorClock(), solution, modifiedScheduleId);
         long tardinessPart = objectiveWithTrialChain(solution, modifiedScheduleId, trialCopy);
         return tardinessPart + depotPenaltyTermForOverrides(solution, modifiedScheduleId, trialCopy);
     }
@@ -182,13 +221,16 @@ public final class LocalSearchScheduleSupport {
     public static long evaluateCombinedTwoTrialChains(
             Solution solution, int id1, List<Patient> c1, int id2, List<Patient> c2) {
         if (!c1.isEmpty()) {
-            recomputeTimesFromDummy(c1.get(0), solution.getGraph(), solution.getSimulatorClock());
+            recomputeTimesFromDummy(
+                    c1.get(0), solution.getGraph(), solution.getSimulatorClock(), solution, id1);
         }
         if (!c2.isEmpty()) {
-            recomputeTimesFromDummy(c2.get(0), solution.getGraph(), solution.getSimulatorClock());
+            recomputeTimesFromDummy(
+                    c2.get(0), solution.getGraph(), solution.getSimulatorClock(), solution, id2);
         }
         long tardinessPart = objectiveWithTwoTrialChains(solution, id1, c1, id2, c2);
-        List<List<Patient>> overrides = emptyChainOverrides(solution.getSchedules().size());
+        List<List<Patient>> overrides =
+                DepotSelectionByObjective.emptyChainOverrides(solution.getSchedules().size());
         overrides.set(id1, c1);
         overrides.set(id2, c2);
         long violationSeconds =
@@ -198,18 +240,12 @@ public final class LocalSearchScheduleSupport {
 
     private static long depotPenaltyTermForOverrides(
             Solution solution, int modifiedScheduleId, List<Patient> trialChain) {
-        List<List<Patient>> overrides = emptyChainOverrides(solution.getSchedules().size());
+        List<List<Patient>> overrides =
+                DepotSelectionByObjective.emptyChainOverrides(solution.getSchedules().size());
         overrides.set(modifiedScheduleId, trialChain);
         long violationSeconds =
                 WheelchairDepotViolationSecondsCalculator.totalViolationSecondsAcrossDepots(solution, overrides);
         return violationSeconds * (long) solution.getDepotInventoryViolationPenaltyCoefficient();
     }
 
-    private static List<List<Patient>> emptyChainOverrides(int scheduleCount) {
-        List<List<Patient>> list = new ArrayList<>(scheduleCount);
-        for (int i = 0; i < scheduleCount; i++) {
-            list.add(null);
-        }
-        return list;
-    }
 }

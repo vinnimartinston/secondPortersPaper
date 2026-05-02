@@ -5,10 +5,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.paper2.domain.Depot;
 import com.paper2.domain.DomainConstants;
 import com.paper2.domain.FinalSchedule;
 import com.paper2.domain.Graph;
 import com.paper2.domain.Patient;
+import com.paper2.domain.Porter;
+import com.paper2.domain.RouteTiming;
 import com.paper2.domain.Solution;
 import com.paper2.domain.TimeObject;
 import com.paper2.domain.TransportModeKind;
@@ -26,6 +29,7 @@ import com.paper2.dto.metrics.ExperimentMetricsDto.Summary;
 import com.paper2.dto.metrics.ExperimentMetricsDto.TimeSecondsAndClock;
 import com.paper2.dto.metrics.ExperimentMetricsDto.Tardiness;
 import com.paper2.dto.metrics.ExperimentMetricsDto.WheelchairDepot;
+import com.paper2.metrics.inventory.DepotSelectionByObjective;
 
 /**
  * Computes aggregated metrics from {@link Solution#getFinalSchedules()} for {@code *_metrics.json},
@@ -113,8 +117,15 @@ public final class SolutionMetricsCalculator {
         if (graph == null) {
             idleNote = "Idle not computed: Solution has no Graph.";
         } else {
+            DepotSelectionByObjective.DepotLegPlan finalDepotPlan = null;
+            if (solution.getDepots() != null && !solution.getDepots().isEmpty()) {
+                finalDepotPlan =
+                        DepotSelectionByObjective.buildPlan(
+                                solution,
+                                DepotSelectionByObjective.chainOverridesFromFinalSchedulesByPorterId(solution));
+            }
             for (FinalSchedule fs : solution.getFinalSchedules()) {
-                sumIdle += idleSecondsReplayedOnRoute(fs, graph);
+                sumIdle += idleSecondsReplayedOnRoute(fs, graph, solution.getDepots(), finalDepotPlan);
             }
         }
 
@@ -129,7 +140,7 @@ public final class SolutionMetricsCalculator {
         Summary summary =
                 new Summary(
                         makespanSec,
-                        formatClock(new TimeObject(makespanSec)),
+                        ScheduleTimeFormat.clockOrZero(new TimeObject(makespanSec)),
                         sumWeightedTard,
                         sumUnweightedTard,
                         solution.getObjectiveValue());
@@ -392,11 +403,17 @@ public final class SolutionMetricsCalculator {
      * using {@code start}/{@code end} from online merge, which are not always consecutive in the final
      * list.
      */
-    private static double idleSecondsReplayedOnRoute(FinalSchedule fs, Graph graph) {
+    private static double idleSecondsReplayedOnRoute(
+            FinalSchedule fs,
+            Graph graph,
+            List<Depot> depots,
+            DepotSelectionByObjective.DepotLegPlan finalDepotPlan) {
         List<Patient> pts = fs.getPatients();
         if (graph == null || pts == null || pts.size() < 2) {
             return 0;
         }
+        Porter porter = fs.getPorter();
+        int scheduleIndex = porter != null ? porter.getId() : -1;
         Patient prev = pts.get(0);
         int prevEndSec = prev.getEndTime().getSeconds();
         if (prev.isDummy()) {
@@ -408,12 +425,21 @@ public final class SolutionMetricsCalculator {
             if (cur.isDummy()) {
                 continue;
             }
-            int requestedSec = cur.getRequestedTime().getSeconds();
-            int earliestSec = Math.max(requestedSec, prevEndSec);
+            int earliestSec =
+                    RouteTiming.earliestStart(cur.getRequestedTime(), prev.getEndTime(), null).getSeconds();
             sumIdle += Math.max(0, earliestSec - prevEndSec);
+            Depot depotForLeg = null;
+            if (porter != null
+                    && depots != null
+                    && !depots.isEmpty()
+                    && scheduleIndex >= 0
+                    && finalDepotPlan != null) {
+                depotForLeg =
+                        DepotSelectionByObjective.depotForLeg(
+                                finalDepotPlan, scheduleIndex, i, prev, depots, graph);
+            }
             int travelSec =
-                    graph.getTravelTimeBetweenTwoLocations(prev.getLocation(), cur.getLocation())
-                            .getSeconds();
+                    RouteTiming.travelBetweenPatients(graph, prev, cur, porter, depotForLeg).getSeconds();
             int endSvc = earliestSec + travelSec + cur.getTransportTime();
             prevEndSec = endSvc;
             prev = cur;
@@ -434,10 +460,6 @@ public final class SolutionMetricsCalculator {
             }
         }
         return out;
-    }
-
-    private static String formatClock(TimeObject o) {
-        return o == null ? "00:00:00" : o.toString();
     }
 
     private static String formatDurationSeconds(double seconds) {

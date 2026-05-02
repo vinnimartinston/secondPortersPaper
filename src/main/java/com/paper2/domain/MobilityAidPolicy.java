@@ -33,4 +33,21 @@ public class MobilityAidPolicy {
         this.retainEquipmentAtDestination = dto.isKeepsTheEquipmentAtDestination();
         this.equipmentPresentAtOrigin = dto.isHasTheEquipmentAtOrigin();
     }
+
+
+    public boolean isWheelchairAid() {
+        return aidType.equals("Wheelchair");
+    }
+
+    public boolean isHospitalBedAid() {
+        return aidType.equals("Hospital Bed");
+    }
+
+    public boolean isRequiresWheelchairPickupFromDepot(MobilityAidPolicy previous) {
+        return isWheelchairAid() && !equipmentPresentAtOrigin && (!previous.isWheelchairAid() || previous.isRetainEquipmentAtDestination());
+    }
+
+    public boolean isReturnsWheelchairToDepotAfterService(MobilityAidPolicy previous) {
+        return previous.isWheelchairAid() && !previous.isRetainEquipmentAtDestination() && (!this.isWheelchairAid() || this.isEquipmentPresentAtOrigin());
+    }
 }

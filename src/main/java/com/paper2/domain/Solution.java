@@ -6,6 +6,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.paper2.domain.inventory.SolutionInventoryState;
+import com.paper2.metrics.inventory.DepotSelectionByObjective;
+import com.paper2.metrics.inventory.WheelchairDepotEdgeRules;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -95,8 +97,10 @@ public class Solution {
      * The first real patient after the dummy is left unchanged (same as not updating vector index 0).
      */
     public void removeIdle() {
+        DepotSelectionByObjective.DepotLegPlan depotLegPlan =
+                DepotSelectionByObjective.buildPlan(this, null);
         for (Schedule schedule : schedules) {
-            removeIdleOnSchedule(schedule);
+            removeIdleOnSchedule(schedule, depotLegPlan);
         }
     }
 
@@ -127,22 +131,53 @@ public class Solution {
         }
     }
 
-    private void removeIdleOnSchedule(Schedule schedule) {
+    private void removeIdleOnSchedule(Schedule schedule, DepotSelectionByObjective.DepotLegPlan depotLegPlan) {
         Patient first = schedule.getStart();
         if (first == null) {
             return;
         }
 
+        int legIndexForTimes = 0;
         Patient current = first.getNext();
         while (current != null) {
             Patient previous = current.getPrevious();
-            TimeObject earliestReady = this.calculateEarliestReady(current.getRequestedTime(), previous.getEndTime());
-
+            TimeObject earliestReady =
+                    RouteTiming.earliestStart(
+                            current.getRequestedTime(), previous.getEndTime(), this.simulatorClock);
+            legIndexForTimes++;
+            Depot depotForLeg =
+                    DepotSelectionByObjective.depotForLeg(
+                            depotLegPlan,
+                            schedule.getId(),
+                            legIndexForTimes,
+                            previous,
+                            this.depots,
+                            this.graph);
             TimeObject travelTime =
-                    graph.getTravelTimeBetweenTwoLocations(
-                            previous.getLocation(), current.getLocation());
+                    RouteTiming.travelBetweenPatients(
+                            this.graph, previous, current, schedule.getPorter(), depotForLeg);
             current.updateTimeFromLastPatient(earliestReady, travelTime);
             current = current.getNext();
+        }
+        int legIndex = 0;
+        for (Patient p = schedule.getStart(); p != null; p = p.getNext()) {
+            Patient next = p.getNext();
+            if (next != null) {
+                legIndex++;
+                int depotId =
+                        WheelchairDepotEdgeRules.depotIdVisitedBeforeNext(
+                                p,
+                                next,
+                                schedule.getPorter(),
+                                this.depots,
+                                this.graph,
+                                schedule.getId(),
+                                legIndex,
+                                depotLegPlan);
+                p.setDepotIdVisitedBeforeNext(depotId);
+            } else {
+                p.setDepotIdVisitedBeforeNext(0);
+            }
         }
         schedule.setEndTime(schedule.getEnd().getEndTime());
     }
@@ -157,22 +192,39 @@ public class Solution {
             return "Solution(schedules=empty)";
         }
         StringBuilder sb = new StringBuilder();
+        DepotSelectionByObjective.DepotLegPlan linePlan =
+                graph != null && depots != null && !depots.isEmpty()
+                        ? DepotSelectionByObjective.buildPlan(this, null)
+                        : null;
         for (Schedule schedule : schedules) {
             sb.append(schedule.toString()).append('\n');
-            Patient p = schedule.getStart();
-            while (p != null && !p.isDummy()) {
+            int lineLeg = 0;
+            for (Patient p = schedule.getStart(); p != null; p = p.getNext()) {
+                if (p.isDummy()) {
+                    continue;
+                }
                 Patient prev = p.getPrevious();
                 if (prev != null) {
+                    lineLeg++;
+                    Porter porter = schedule.getPorter();
+                    Depot depotForLine =
+                            linePlan != null && porter != null
+                                    ? DepotSelectionByObjective.depotForLeg(
+                                            linePlan,
+                                            schedule.getId(),
+                                            lineLeg,
+                                            prev,
+                                            this.depots,
+                                            this.graph)
+                                    : null;
                     TimeObject travel =
-                            graph.getTravelTimeBetweenTwoLocations(prev.getLocation(), p.getLocation())
-                                    ;
+                            RouteTiming.travelBetweenPatients(graph, prev, p, porter, depotForLine);
                     sb.append('\t')
                             .append("Travel Time: ")
                             .append(travel.toString())
                             .append('\n');
                 }
                 sb.append('\t').append(p.toStringWithTime()).append('\n');
-                p = p.getNext();
             }
             sb.append('\n');
         }
@@ -181,14 +233,6 @@ public class Solution {
 
     public boolean isPatientTransported(Patient patient){
         return this.transportedPatients.contains(patient.getId());
-    }
-
-    private TimeObject calculateEarliestReady(TimeObject patientRequestedTime, TimeObject previousEndTime) {
-        return new TimeObject(
-            Math.max(
-                Math.max(patientRequestedTime.getSeconds(),
-                 this.simulatorClock.getSeconds()),
-                previousEndTime.getSeconds()));
     }
 
     public void resetNonTransportedPatients() {

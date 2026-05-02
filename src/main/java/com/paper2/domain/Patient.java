@@ -21,6 +21,8 @@ public class Patient {
     private MobilityAidPolicy mobilityAidPolicy;
     private Patient next;
     private Patient previous;
+    /** Depot visited between this patient and {@link #next}; {@code 0} if none or no successor. */
+    private int depotIdVisitedBeforeNext;
 
     public Patient(PatientDto dto, Graph graph) {
         this.id = dto.getId();
@@ -29,6 +31,7 @@ public class Patient {
         this.time =
                 new TimeProperties(dto.getTime(), graph.getTravelTime(this.location).getSeconds());
         this.mobilityAidPolicy = new MobilityAidPolicy(dto.getTransportMode());
+        this.depotIdVisitedBeforeNext = 0;
     }
 
     public Patient(Patient patient) {
@@ -37,12 +40,14 @@ public class Patient {
         this.priority = patient.getPriority();
         this.time = new TimeProperties(patient.getTime());
         this.mobilityAidPolicy = patient.getMobilityAidPolicy();
+        this.depotIdVisitedBeforeNext = patient.getDepotIdVisitedBeforeNext();
     }
 
     public void resetPatient() {
         this.previous = null;
         this.next = null;
         this.time.resetTimeProperties();
+        this.depotIdVisitedBeforeNext = 0;
     }
 
     /**
@@ -57,6 +62,7 @@ public class Patient {
         t.getEndTime().setSeconds(o.getEndTime().getSeconds());
         t.getLateness().setSeconds(o.getLateness().getSeconds());
         t.getTransportTime().setSeconds(o.getTransportTime().getSeconds());
+        p.setDepotIdVisitedBeforeNext(outputRow.getDepotIdVisitedBeforeNext());
         return p;
     }
 

@@ -1,5 +1,7 @@
 package com.paper2.domain;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import lombok.Getter;
@@ -73,8 +75,28 @@ public class Schedule {
         this.time = new ScheduleTimeProperties(patient.getEndTime());
     }
 
+    /**
+     * Patients from {@link #getStart()} along {@code next} links (typically dummy at index 0), in a new list.
+     */
+    public List<Patient> orderedPatientsFromStart() {
+        List<Patient> nodes = new ArrayList<>();
+        for (Patient p = this.start; p != null; p = p.getNext()) {
+            nodes.add(p);
+        }
+        return nodes;
+    }
 
     public void insertPatient(Patient patient, Graph graph) {
+        insertPatient(patient, graph, null, null, null);
+    }
+
+    /**
+     * Like {@link #insertPatient(Patient, Graph)}; when {@code depots}, {@code porter}, and {@code depotForLeg} are
+     * set and {@link Porter#shouldGoToDepot} applies, travel uses {@link Graph#getTravelTimeBetweenTwoLocations(
+     * Location, Location, boolean, Depot)} with that depot (e.g. from {@link com.paper2.metrics.inventory.DepotSelectionByObjective}).
+     */
+    public void insertPatient(
+            Patient patient, Graph graph, List<Depot> depots, Porter porter, Depot depotForLegWhenDepotVisit) {
         Patient predecessor = this.amountOfPatients == 0 ? this.start : this.end;
 
         predecessor.setNext(patient);
@@ -82,7 +104,8 @@ public class Schedule {
         this.end = patient;
 
         TimeObject travelTime =
-                graph.getTravelTimeBetweenTwoLocations(predecessor.getLocation(), patient.getLocation());
+                RouteTiming.travelBetweenPatients(
+                        graph, predecessor, patient, porter, depotForLegWhenDepotVisit);
         patient.updateTimeFromLastPatient(predecessor.getEndTime(), travelTime);
 
         this.time.setEndTime(patient.getEndTime());

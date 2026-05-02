@@ -4,15 +4,15 @@
   "depots":[
     {
       "id": 1,
-      "initialWheelchairInventory": 100
+      "initialWheelchairInventory": 50
     },
     {
       "id": 2,
-      "initialWheelchairInventory": 100
+      "initialWheelchairInventory": 50
     },
     {
       "id": 3,
-      "initialWheelchairInventory": 100
+      "initialWheelchairInventory": 50
     }
   ]
 }

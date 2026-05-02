@@ -1,5 +1,8 @@
 package com.paper2.simulator.solver.localsearch;
 
+import java.util.List;
+
+import com.paper2.domain.Patient;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
@@ -11,6 +14,19 @@ import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
 public final class TotalUnweightedTardinessObjective {
 
     private TotalUnweightedTardinessObjective() {}
+
+    /**
+     * Sum of unweighted tardiness in seconds on non-dummy nodes (requires up-to-date {@link Patient#getTime()}).
+     */
+    public static long sumTardinessSeconds(List<Patient> nodes) {
+        long sum = 0;
+        for (Patient p : nodes) {
+            if (p != null && !p.isDummy()) {
+                sum += p.getTime().getLateness().getSeconds();
+            }
+        }
+        return sum;
+    }
 
     /**
      * Sum of tardiness (seconds) over all non-dummy patients on all working schedules (no depot term).

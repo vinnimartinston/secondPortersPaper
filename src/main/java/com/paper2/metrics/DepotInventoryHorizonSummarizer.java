@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntToLongFunction;
 
-import com.paper2.domain.DomainConstants;
 import com.paper2.domain.TimeObject;
 import com.paper2.domain.inventory.DepotBalanceTimeline;
 import com.paper2.dto.solution.BalanceStepDto;
@@ -60,8 +59,11 @@ public final class DepotInventoryHorizonSummarizer {
         DepotInventoryTimelineSummaryDto dto = new DepotInventoryTimelineSummaryDto();
         dto.setWindowStartSeconds(start);
         dto.setWindowEndExclusiveSeconds(Math.max(start, end));
-        dto.setWindowStartClock(formatHms(start));
-        dto.setWindowEndLastIncludedClock(end > start ? formatHms(end - 1) : formatHms(start));
+        dto.setWindowStartClock(ScheduleTimeFormat.clockFromBoundedSeconds(start));
+        dto.setWindowEndLastIncludedClock(
+                end > start
+                        ? ScheduleTimeFormat.clockFromBoundedSeconds(end - 1)
+                        : ScheduleTimeFormat.clockFromBoundedSeconds(start));
         dto.setMinBalance(0);
         dto.setMaxBalance(0);
         dto.setBalanceAtWindowStart(0);
@@ -76,8 +78,9 @@ public final class DepotInventoryHorizonSummarizer {
         DepotInventoryTimelineSummaryDto dto = new DepotInventoryTimelineSummaryDto();
         dto.setWindowStartSeconds(windowStartSeconds);
         dto.setWindowEndExclusiveSeconds(windowEndExclusiveSeconds);
-        dto.setWindowStartClock(formatHms(windowStartSeconds));
-        dto.setWindowEndLastIncludedClock(formatHms(windowEndExclusiveSeconds - 1));
+        dto.setWindowStartClock(ScheduleTimeFormat.clockFromBoundedSeconds(windowStartSeconds));
+        dto.setWindowEndLastIncludedClock(
+                ScheduleTimeFormat.clockFromBoundedSeconds(windowEndExclusiveSeconds - 1));
 
         long min = Long.MAX_VALUE;
         long max = Long.MIN_VALUE;
@@ -97,7 +100,8 @@ public final class DepotInventoryHorizonSummarizer {
             }
             if (previous == null || b != previous) {
                 if (steps.size() < MAX_STEPS_IN_JSON) {
-                    steps.add(new BalanceStepDto(t, formatHms(t), b));
+                    steps.add(
+                            new BalanceStepDto(t, ScheduleTimeFormat.clockFromBoundedSeconds(t), b));
                 }
                 previous = b;
             }
@@ -112,8 +116,4 @@ public final class DepotInventoryHorizonSummarizer {
         return dto;
     }
 
-    private static String formatHms(int secondsSinceMidnight) {
-        int sec = Math.min(Math.max(0, secondsSinceMidnight), DomainConstants.MAX_TIME_SECONDS);
-        return new TimeObject(sec).toString();
-    }
 }

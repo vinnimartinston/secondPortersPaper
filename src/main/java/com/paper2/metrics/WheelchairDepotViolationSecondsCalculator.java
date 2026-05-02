@@ -14,6 +14,7 @@ import com.paper2.domain.Patient;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.domain.inventory.SolutionInventoryState;
+import com.paper2.metrics.inventory.DepotSelectionByObjective;
 import com.paper2.metrics.inventory.WheelchairDepotEdgeRules;
 import com.paper2.metrics.inventory.WheelchairDepotEdgeRules.WheelchairDepotBalanceChange;
 
@@ -37,16 +38,55 @@ public final class WheelchairDepotViolationSecondsCalculator {
     }
 
     public static Map<Integer, Long> violationSecondsPerDepot(Solution solution) {
-        return new LinkedHashMap<>(computeViolationSweep(solution, null).secondsByDepotId());
+        WheelchairDepotEdgeRules.DepotPerLeg legDepot =
+                DepotSelectionByObjective.resolver(
+                        DepotSelectionByObjective.buildPlan(solution, null),
+                        solution.getDepots(),
+                        solution.getGraph());
+        return new LinkedHashMap<>(computeViolationSweep(solution, null, legDepot).secondsByDepotId());
     }
 
+    /**
+     * Uses the same per-leg depot policy as {@link com.paper2.metrics.inventory.DepotSelectionByObjective}, so
+     * violation seconds match the depot term in the combined objective.
+     */
     public static long totalViolationSecondsAcrossDepots(
             Solution solution, List<List<Patient>> chainOverrideByScheduleIndex) {
-        return computeViolationSweep(solution, chainOverrideByScheduleIndex).totalSeconds();
+        WheelchairDepotEdgeRules.DepotPerLeg legDepot =
+                DepotSelectionByObjective.resolver(
+                        DepotSelectionByObjective.buildPlan(solution, chainOverrideByScheduleIndex),
+                        solution.getDepots(),
+                        solution.getGraph());
+        return computeViolationSweep(solution, chainOverrideByScheduleIndex, legDepot).totalSeconds();
+    }
+
+    /**
+     * Like {@link #totalViolationSecondsAcrossDepots(Solution, List)} but uses {@code legDepot} when collecting
+     * per-leg depot choices (e.g. trial depots while building {@link DepotSelectionByObjective.DepotLegPlan}).
+     */
+    public static long totalViolationSecondsAcrossDepots(
+            Solution solution,
+            List<List<Patient>> chainOverrideByScheduleIndex,
+            WheelchairDepotEdgeRules.DepotPerLeg legDepot) {
+        return computeViolationSweep(solution, chainOverrideByScheduleIndex, legDepot).totalSeconds();
+    }
+
+    /**
+     * Resolves the patient chain for {@code scheduleIndex} the same way as violation aggregation (override list entry
+     * or live {@link Schedule} walk).
+     */
+    public static List<Patient> resolveChainPublic(
+            Solution solution, int scheduleIndex, List<List<Patient>> chainOverrideByScheduleIndex) {
+        if (solution.getSchedules() == null || scheduleIndex < 0 || scheduleIndex >= solution.getSchedules().size()) {
+            return List.of();
+        }
+        return resolveChain(solution.getSchedules(), scheduleIndex, chainOverrideByScheduleIndex);
     }
 
     private static ViolationSweepOutcome computeViolationSweep(
-            Solution solution, List<List<Patient>> chainOverrideByScheduleIndex) {
+            Solution solution,
+            List<List<Patient>> chainOverrideByScheduleIndex,
+            WheelchairDepotEdgeRules.DepotPerLeg legDepot) {
         if (solution == null
                 || solution.getSchedules() == null
                 || solution.getDepots() == null
@@ -67,7 +107,7 @@ public final class WheelchairDepotViolationSecondsCalculator {
         }
 
         Map<Integer, List<WheelchairDepotBalanceChange>> allByDepot =
-                collectAllWorkingChangesByDepot(solution, chainOverrideByScheduleIndex);
+                collectAllWorkingChangesByDepot(solution, chainOverrideByScheduleIndex, legDepot);
 
         Map<Integer, Long> byDepotId = new LinkedHashMap<>();
         long totalViolations = 0;
@@ -139,7 +179,9 @@ public final class WheelchairDepotViolationSecondsCalculator {
      * Merges wheelchair depot events from all working schedules (or trial overrides).
      */
     private static Map<Integer, List<WheelchairDepotBalanceChange>> collectAllWorkingChangesByDepot(
-            Solution solution, List<List<Patient>> chainOverrideByScheduleIndex) {
+            Solution solution,
+            List<List<Patient>> chainOverrideByScheduleIndex,
+            WheelchairDepotEdgeRules.DepotPerLeg legDepot) {
         Map<Integer, List<WheelchairDepotBalanceChange>> merged = new HashMap<>();
         List<Schedule> schedules = solution.getSchedules();
         List<Depot> depots = solution.getDepots();
@@ -152,7 +194,7 @@ public final class WheelchairDepotViolationSecondsCalculator {
             List<Patient> nodes = resolveChain(schedules, scheduleIndex, chainOverrideByScheduleIndex);
             Map<Integer, List<WheelchairDepotBalanceChange>> byDepot =
                     WheelchairDepotEdgeRules.collectBalanceChangesForChainNodes(
-                            nodes, schedule.getPorter(), depots, graph);
+                            nodes, schedule.getPorter(), depots, graph, scheduleIndex, legDepot);
             for (Map.Entry<Integer, List<WheelchairDepotBalanceChange>> e : byDepot.entrySet()) {
                 merged.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).addAll(e.getValue());
             }
@@ -184,7 +226,10 @@ public final class WheelchairDepotViolationSecondsCalculator {
             return Math.max(DomainConstants.SCHEDULE_START_TIME_SECONDS, sim);
         }
         int lastScheduledSecondIncluded = rawEndExclusive - 1;
-        if (sim > lastScheduledSecondIncluded) {
+        // Use >= so that when the simulator clock sits exactly on the last scheduled second (typical terminal
+        // state after PolicyOne advances to max route end), we still evaluate [shift start, end), matching the
+        // committed timeline shown in *_solution.json. Strict > left a one-second window and zeroed penalties.
+        if (sim >= lastScheduledSecondIncluded) {
             return DomainConstants.SCHEDULE_START_TIME_SECONDS;
         }
         return Math.max(DomainConstants.SCHEDULE_START_TIME_SECONDS, sim);
@@ -221,18 +266,8 @@ public final class WheelchairDepotViolationSecondsCalculator {
                 && chainOverrideByScheduleIndex.get(scheduleIndex) != null) {
             return chainOverrideByScheduleIndex.get(scheduleIndex);
         }
-        return nodesFromSchedule(schedules.get(scheduleIndex));
-    }
-
-    private static List<Patient> nodesFromSchedule(Schedule schedule) {
-        List<Patient> nodes = new ArrayList<>();
-        if (schedule == null || schedule.getStart() == null) {
-            return nodes;
-        }
-        for (Patient patient = schedule.getStart(); patient != null; patient = patient.getNext()) {
-            nodes.add(patient);
-        }
-        return nodes;
+        Schedule schedule = schedules.get(scheduleIndex);
+        return schedule == null ? List.of() : schedule.orderedPatientsFromStart();
     }
 
     private static long violationSecondsForDepot(
