@@ -21,7 +21,7 @@ public class ExperimentRunnerConfig {
      * Base names of instances to run (e.g. {@code "example"} or {@code "example.json"}).
      * If empty, every {@code *.json} under the resolved input folder is executed.
      */
-    public static List<String> instances = List.of("800N1SC3DEP20RT40CH1REP");
+    public static List<String> instances = List.of();
 
     /**
      * Experiment JSON files under {@link ExperimentManager#EXPERIMENTS_ROOT} (with or without {@code .json}).
@@ -33,7 +33,7 @@ public class ExperimentRunnerConfig {
      * Parallelism for {@link java.util.concurrent.ForkJoinPool}. If {@code null} or
      * non-positive, {@link Runtime#availableProcessors()} is used.
      */
-    public static Integer parallelism = 2;
+    public static Integer parallelism = 1;
 
     public static Integer getParallelism() {
         return parallelism;

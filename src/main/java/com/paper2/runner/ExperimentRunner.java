@@ -29,14 +29,23 @@ import com.paper2.simulator.Simulator;
 /**
  * Batch driver for simulation experiments.
  *
- * <p>For each experiment JSON (see {@link ExperimentManager#resolveExperimentFileNames()}), loads penalty and
- * optional wheelchair inventory overrides, then runs every selected instance JSON under {@link ExperimentManager#INPUT_ROOT}
- * through {@link Simulator} using a {@link ForkJoinPool}. Writes solution and metrics JSON files named after each
- * instance stem under {@code files/output/}, in a subfolder named after the experiment file stem (without {@code .json}).
+ * <p>
+ * For each experiment JSON (see
+ * {@link ExperimentManager#resolveExperimentFileNames()}), loads penalty and
+ * optional wheelchair inventory overrides, then runs every selected instance
+ * JSON under {@link ExperimentManager#INPUT_ROOT}
+ * through {@link Simulator} using a {@link ForkJoinPool}. Writes solution and
+ * metrics JSON files named after each
+ * instance stem under {@code files/output/}, in a subfolder named after the
+ * experiment file stem (without {@code .json}).
  *
- * <p>Before each instance starts, prints a cyan progress line {@code Running Experiment XX/YY (ZZ%)} on the console
- * ({@code ZZ = round(100·XX/YY)}). {@code XX}/{@code YY} count all instance runs across every experiment file when several
- * are configured; with parallelism greater than one, lines may appear out of order. After each instance finishes successfully,
+ * <p>
+ * Before each instance starts, prints a cyan progress line
+ * {@code Running Experiment XX/YY (ZZ%)} on the console
+ * ({@code ZZ = round(100·XX/YY)}). {@code XX}/{@code YY} count all instance
+ * runs across every experiment file when several
+ * are configured; with parallelism greater than one, lines may appear out of
+ * order. After each instance finishes successfully,
  * prints a green line {@code Experiment <name> + <instanceStem> - ok}.
  *
  * @see ExperimentManager
@@ -59,14 +68,18 @@ public class ExperimentRunner {
 
     private final Simulator simulator;
 
-    /** Constructs a runner with default {@link ObjectMapper} (modules registered, indented JSON on write) and {@link Simulator}. */
+    /**
+     * Constructs a runner with default {@link ObjectMapper} (modules registered,
+     * indented JSON on write) and {@link Simulator}.
+     */
     public ExperimentRunner() {
         this(new ObjectMapper(), new Simulator());
     }
 
     /**
-     * @param objectMapper Jackson mapper (module registration and indented output enabled)
-     * @param simulator simulation engine to use for each instance
+     * @param objectMapper Jackson mapper (module registration and indented output
+     *                     enabled)
+     * @param simulator    simulation engine to use for each instance
      */
     public ExperimentRunner(ObjectMapper objectMapper, Simulator simulator) {
         this.objectMapper = objectMapper.findAndRegisterModules()
@@ -75,9 +88,11 @@ public class ExperimentRunner {
     }
 
     /**
-     * Entry point: {@code java -cp ... com.paper2.runner.ExperimentRunner} or Maven exec.
+     * Entry point: {@code java -cp ... com.paper2.runner.ExperimentRunner} or Maven
+     * exec.
      * <p>
-     * Optional arguments and effective folders come from {@link ExperimentManager} /
+     * Optional arguments and effective folders come from {@link ExperimentManager}
+     * /
      * {@link ExperimentRunnerConfig}.
      *
      * @param args not used directly (configuration via properties / manager)
@@ -88,15 +103,22 @@ public class ExperimentRunner {
     }
 
     /**
-     * Runs all experiments returned by {@link ExperimentManager#resolveExperimentFileNames()}, sequentially per
+     * Runs all experiments returned by
+     * {@link ExperimentManager#resolveExperimentFileNames()}, sequentially per
      * experiment file but parallel across instances within each experiment.
      *
-     * <p>Instance inputs are read from {@link ExperimentManager#INPUT_ROOT}. If
-     * {@link ExperimentManager#resolveInstanceFileNames()} is non-empty, only those JSON names are run (paths must stay
-     * under the input root); if empty, every {@code *.json} file in that folder is run (sorted).
+     * <p>
+     * Instance inputs are read from {@link ExperimentManager#INPUT_ROOT}. If
+     * {@link ExperimentManager#resolveInstanceFileNames()} is non-empty, only those
+     * JSON names are run (paths must stay
+     * under the input root); if empty, every {@code *.json} file in that folder is
+     * run (sorted).
      *
-     * <p>If no experiment JSON exists under {@link ExperimentManager#EXPERIMENTS_ROOT}, prints a message and returns.
-     * If there are no instance JSON files under the input root, prints a message and returns.
+     * <p>
+     * If no experiment JSON exists under
+     * {@link ExperimentManager#EXPERIMENTS_ROOT}, prints a message and returns.
+     * If there are no instance JSON files under the input root, prints a message
+     * and returns.
      *
      * @throws Exception if directory listing fails or the pool task is interrupted
      */
@@ -104,7 +126,7 @@ public class ExperimentRunner {
         Path inputDir = Paths.get(ExperimentManager.INPUT_ROOT);
 
         if (!Files.isDirectory(inputDir)) {
-                throw new IllegalArgumentException("input directory is not valid: " + inputDir);
+            throw new IllegalArgumentException("input directory is not valid: " + inputDir);
         }
 
         List<String> experimentFiles = ExperimentManager.resolveExperimentFileNames();
@@ -149,33 +171,36 @@ public class ExperimentRunner {
 
                 final int experimentIndexZeroBased = experimentOrdinal++;
                 pool.submit(
-                                () ->
-                                        IntStream.range(0, instancesPerExperiment)
-                                                .parallel()
-                                                .forEach(
-                                                        i ->
-                                                                runOne(
-                                                                        jsonFiles.get(i),
-                                                                        outputDir,
-                                                                        experimentConfig,
-                                                                        experimentIndexZeroBased * instancesPerExperiment
-                                                                                + i
-                                                                                + 1,
-                                                                        totalInstancesGlobal)))
+                        () -> IntStream.range(0, instancesPerExperiment)
+                                .parallel()
+                                .forEach(
+                                        i -> runOne(
+                                                jsonFiles.get(i),
+                                                outputDir,
+                                                experimentConfig,
+                                                experimentIndexZeroBased + 1,
+                                                totalInstancesGlobal)))
                         .get();
             }
         }
     }
 
     /**
-     * Loads one instance JSON, optionally overrides depot wheelchair counts from the experiment config, runs the
+     * Loads one instance JSON, optionally overrides depot wheelchair counts from
+     * the experiment config, runs the
      * simulator, and writes solution and metrics artifacts.
      *
-     * @param inputPath path to the instance JSON under {@link ExperimentManager#INPUT_ROOT}
-     * @param outputDir directory for this experiment’s outputs (typically under {@code files/output/})
-     * @param experimentConfig resolved experiment settings (penalty applied globally before this batch)
-     * @param instanceIndexOneBased global index of this instance across all experiments (1 … {@code totalInstances}), for logging
-     * @param totalInstances total instance runs ({@code jsonFiles × experimentFiles})
+     * @param inputPath             path to the instance JSON under
+     *                              {@link ExperimentManager#INPUT_ROOT}
+     * @param outputDir             directory for this experiment’s outputs
+     *                              (typically under {@code files/output/})
+     * @param experimentConfig      resolved experiment settings (penalty applied
+     *                              globally before this batch)
+     * @param instanceIndexOneBased global index of this instance across all
+     *                              experiments (1 … {@code totalInstances}), for
+     *                              logging
+     * @param totalInstances        total instance runs
+     *                              ({@code jsonFiles × experimentFiles})
      */
     private void runOne(
             Path inputPath,
@@ -198,8 +223,7 @@ public class ExperimentRunner {
                 Path solutionFile = outputDir.resolve(stem + "_solution.json");
                 SolutionSerializer.write(solutionFile, run.getSolution());
                 System.out.println("Wrote " + solutionFile.toAbsolutePath());
-                ExperimentMetricsDto metrics =
-                        SolutionMetricsCalculator.compute(run.getSolution(), input, wallSeconds);
+                ExperimentMetricsDto metrics = SolutionMetricsCalculator.compute(run.getSolution(), input, wallSeconds);
                 Path metricsFile = outputDir.resolve(stem + "_metrics.json");
                 objectMapper.writeValue(metricsFile.toFile(), metrics);
                 System.out.println("Wrote " + metricsFile.toAbsolutePath());
@@ -211,14 +235,14 @@ public class ExperimentRunner {
     }
 
     /**
-     * Prints {@code Running Experiment XX/YY (ZZ%)} in ANSI cyan (foreground {@code 36}); {@code ZZ} is
+     * Prints {@code Running Experiment XX/YY (ZZ%)} in ANSI cyan (foreground
+     * {@code 36}); {@code ZZ} is
      * {@code round(100·XX/YY)} for the batch position {@code XX}.
      */
     private static void printInstanceProgress(int instanceIndexOneBased, int totalInstances) {
-        int zz =
-                totalInstances <= 0
-                        ? 0
-                        : (int) Math.round(100.0 * instanceIndexOneBased / totalInstances);
+        int zz = totalInstances <= 0
+                ? 0
+                : (int) Math.round(100.0 * instanceIndexOneBased / totalInstances);
         synchronized (INSTANCE_PROGRESS_PRINT_LOCK) {
             System.out.printf(
                     "%sRunning Experiment %d/%d (%d%%)%s%n",
@@ -231,7 +255,8 @@ public class ExperimentRunner {
     }
 
     /**
-     * Prints {@code Experiment <experimentName> + <instanceStem> - ok} in ANSI green after a finished instance run.
+     * Prints {@code Experiment <experimentName> + <instanceStem> - ok} in ANSI
+     * green after a finished instance run.
      */
     private static void printExperimentInstanceOk(String experimentName, String instanceStem) {
         synchronized (INSTANCE_PROGRESS_PRINT_LOCK) {
@@ -245,8 +270,10 @@ public class ExperimentRunner {
     }
 
     /**
-     * When {@code overwrite} is true, replaces {@link DepotDto#getInitialWheelchairInventory()} on each depot whose
-     * {@code id} appears in {@code overrides} with the experiment-declared value (input JSON otherwise unchanged).
+     * When {@code overwrite} is true, replaces
+     * {@link DepotDto#getInitialWheelchairInventory()} on each depot whose
+     * {@code id} appears in {@code overrides} with the experiment-declared value
+     * (input JSON otherwise unchanged).
      */
     private static void applyWheelchairInventoryOverrides(
             InputDto input, boolean overwrite, Map<Integer, Integer> overrides) {
@@ -266,7 +293,8 @@ public class ExperimentRunner {
     }
 
     /**
-     * Builds a depot-id → inventory map from experiment JSON when overwrite is requested; skips null patch entries or
+     * Builds a depot-id → inventory map from experiment JSON when overwrite is
+     * requested; skips null patch entries or
      * null {@code id}/{@code initialWheelchairInventory}.
      */
     private static Map<Integer, Integer> buildWheelchairInventoryOverrides(
@@ -287,8 +315,9 @@ public class ExperimentRunner {
     /**
      * Lists {@code *.json} files in the folder or only the given names.
      *
-     * @param inputDir input folder
-     * @param instanceFileNames names with {@code .json}; if empty, all {@code *.json} in the folder
+     * @param inputDir          input folder
+     * @param instanceFileNames names with {@code .json}; if empty, all
+     *                          {@code *.json} in the folder
      * @return sorted paths
      * @throws IOException on directory read failure
      */
@@ -327,7 +356,10 @@ public class ExperimentRunner {
         return stripJsonExtension(path.getFileName().toString());
     }
 
-    /** Removes a trailing {@code .json} suffix case-insensitively; otherwise returns {@code fileName} unchanged. */
+    /**
+     * Removes a trailing {@code .json} suffix case-insensitively; otherwise returns
+     * {@code fileName} unchanged.
+     */
     private static String stripJsonExtension(String fileName) {
         if (fileName.toLowerCase(Locale.ROOT).endsWith(".json")) {
             return fileName.substring(0, fileName.length() - 5);
@@ -336,8 +368,10 @@ public class ExperimentRunner {
     }
 
     /**
-     * Reads experiment JSON under {@link ExperimentManager#EXPERIMENTS_ROOT} with the given file name and derives runnable settings.
-     * Missing or unreadable files fall back to {@link ExperimentConfig#defaultConfig(String)} using the stem as name.
+     * Reads experiment JSON under {@link ExperimentManager#EXPERIMENTS_ROOT} with
+     * the given file name and derives runnable settings.
+     * Missing or unreadable files fall back to
+     * {@link ExperimentConfig#defaultConfig(String)} using the stem as name.
      *
      * @param experimentJsonFileName file name including {@code .json}
      */
@@ -349,19 +383,15 @@ public class ExperimentRunner {
             return ExperimentConfig.defaultConfig(firstExperiment);
         }
         try {
-            ExperimentFileConfig cfg =
-                    objectMapper.readValue(experimentPath.toFile(), ExperimentFileConfig.class);
+            ExperimentFileConfig cfg = objectMapper.readValue(experimentPath.toFile(), ExperimentFileConfig.class);
             Integer penalty = cfg.getPenalty();
             Integer amountOfDepots = cfg.getAmountOfDepots();
-            int normalizedPenalty =
-                    (penalty == null || penalty <= 0) ? DEFAULT_PENALTY_COEFFICIENT : penalty;
+            int normalizedPenalty = (penalty == null || penalty <= 0) ? DEFAULT_PENALTY_COEFFICIENT : penalty;
             int normalizedAmountOfDepots = amountOfDepots == null ? 0 : amountOfDepots;
-            Map<Integer, Integer> wheelchairOverrides =
-                    buildWheelchairInventoryOverrides(
-                            cfg.getOverWriteInitialWheelchairInventory(), cfg.getDepots());
-            boolean overwriteWheelchairs =
-                    Boolean.TRUE.equals(cfg.getOverWriteInitialWheelchairInventory())
-                            && !wheelchairOverrides.isEmpty();
+            Map<Integer, Integer> wheelchairOverrides = buildWheelchairInventoryOverrides(
+                    cfg.getOverWriteInitialWheelchairInventory(), cfg.getDepots());
+            boolean overwriteWheelchairs = Boolean.TRUE.equals(cfg.getOverWriteInitialWheelchairInventory())
+                    && !wheelchairOverrides.isEmpty();
             return new ExperimentConfig(
                     firstExperiment,
                     normalizedPenalty,
@@ -373,10 +403,17 @@ public class ExperimentRunner {
         }
     }
 
-    /** Fragment of experiment JSON: optional depot {@code id} and {@code initialWheelchairInventory} for overrides. */
-    private record ExperimentDepotInventoryPatch(Integer id, Integer initialWheelchairInventory) {}
+    /**
+     * Fragment of experiment JSON: optional depot {@code id} and
+     * {@code initialWheelchairInventory} for overrides.
+     */
+    private record ExperimentDepotInventoryPatch(Integer id, Integer initialWheelchairInventory) {
+    }
 
-    /** Resolved experiment parameters passed into each {@link #runOne} invocation for one batch of instances. */
+    /**
+     * Resolved experiment parameters passed into each {@link #runOne} invocation
+     * for one batch of instances.
+     */
     private static final class ExperimentConfig {
         private final String experimentName;
         private final int penaltyCoefficient;
@@ -397,7 +434,10 @@ public class ExperimentRunner {
             this.initialWheelchairInventoryByDepotId = initialWheelchairInventoryByDepotId;
         }
 
-        /** Fallback when the experiment file is missing or invalid: default penalty and no wheelchair overrides. */
+        /**
+         * Fallback when the experiment file is missing or invalid: default penalty and
+         * no wheelchair overrides.
+         */
         static ExperimentConfig defaultConfig(String experimentName) {
             return new ExperimentConfig(
                     experimentName, DEFAULT_PENALTY_COEFFICIENT, 0, false, Map.of());
@@ -412,7 +452,10 @@ public class ExperimentRunner {
         }
     }
 
-    /** Jackson-bound shape of an experiment JSON file (penalty, optional depot patches). */
+    /**
+     * Jackson-bound shape of an experiment JSON file (penalty, optional depot
+     * patches).
+     */
     private static class ExperimentFileConfig {
         private Integer penalty;
         private Integer amountOfDepots;

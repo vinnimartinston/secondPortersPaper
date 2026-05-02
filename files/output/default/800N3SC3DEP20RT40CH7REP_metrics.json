@@ -1,0 +1,396 @@
+{
+  "instanceName" : "800N3SC3DEP20RT40CH7REP.txt",
+  "amountOfPorters" : 16,
+  "transportedPatientCount" : 800,
+  "simulatorWallTimeSeconds" : 54.544950125,
+  "summary" : {
+    "makespanSeconds" : 59646,
+    "makespanClock" : "16:34:06",
+    "sumWeightedTardiness" : 409918.0,
+    "sumUnweightedTardinessSeconds" : 30784.0,
+    "objectiveValueFromSolution" : 114
+  },
+  "tardiness" : {
+    "countTardinessZero" : 613,
+    "countTardinessPositiveUpTo1800s" : 187,
+    "countTardinessAbove1800s" : 0,
+    "byPriority" : [ {
+      "priority" : 1,
+      "patientCount" : 175,
+      "avgUnweightedTardinessMinutes" : 1.42,
+      "tardyPatientCount" : 44,
+      "tardyPatientShare" : 0.25142857142857145
+    }, {
+      "priority" : 2,
+      "patientCount" : 175,
+      "avgUnweightedTardinessMinutes" : 0.33095238095238094,
+      "tardyPatientCount" : 27,
+      "tardyPatientShare" : 0.15428571428571428
+    }, {
+      "priority" : 3,
+      "patientCount" : 175,
+      "avgUnweightedTardinessMinutes" : 0.09295238095238095,
+      "tardyPatientCount" : 12,
+      "tardyPatientShare" : 0.06857142857142857
+    }, {
+      "priority" : 4,
+      "patientCount" : 275,
+      "avgUnweightedTardinessMinutes" : 0.6923030303030303,
+      "tardyPatientCount" : 104,
+      "tardyPatientShare" : 0.3781818181818182
+    } ],
+    "meanUnweightedTardinessMinutesAllPatients" : 0.6413333333333334
+  },
+  "response" : {
+    "byPriority" : [ {
+      "priority" : 1,
+      "patientCount" : 175,
+      "avgResponseMinutes" : 32.149523809523814
+    }, {
+      "priority" : 2,
+      "patientCount" : 175,
+      "avgResponseMinutes" : 18.72542857142857
+    }, {
+      "priority" : 3,
+      "patientCount" : 175,
+      "avgResponseMinutes" : 10.947714285714286
+    }, {
+      "priority" : 4,
+      "patientCount" : 275,
+      "avgResponseMinutes" : 4.7410303030303025
+    } ],
+    "meanResponseMinutesAllPatients" : 15.1534375
+  },
+  "setupIdle" : {
+    "sumTravelSetupSeconds" : 190404.0,
+    "avgTravelSetupMinutesPerPatient" : 3.96675,
+    "sumIdleSeconds" : 55931.0,
+    "sumIdleClock" : "15:32:11",
+    "avgIdleMinutesPerPorter" : 58.26145833333333,
+    "idleTimeShareOfHorizon" : 0.11332709265382869,
+    "horizonSeconds" : 30846,
+    "idleNote" : null
+  },
+  "porterEffort" : {
+    "effortRateMean" : 0.5890011116153059,
+    "maxBedShareAcrossPorters" : 0.7368421052631579,
+    "minBedShareAcrossPorters" : 0.375,
+    "byPorter" : [ {
+      "porterId" : 0,
+      "bedPatientShare" : 0.631578947368421,
+      "maxConsecutiveBeds" : 9,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 1,
+      "bedPatientShare" : 0.71875,
+      "maxConsecutiveBeds" : 11,
+      "medianConsecutiveBedStreakMetric" : 2.5
+    }, {
+      "porterId" : 2,
+      "bedPatientShare" : 0.6557377049180327,
+      "maxConsecutiveBeds" : 10,
+      "medianConsecutiveBedStreakMetric" : 3.0
+    }, {
+      "porterId" : 3,
+      "bedPatientShare" : 0.5423728813559322,
+      "maxConsecutiveBeds" : 6,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 4,
+      "bedPatientShare" : 0.6825396825396826,
+      "maxConsecutiveBeds" : 6,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 5,
+      "bedPatientShare" : 0.5098039215686274,
+      "maxConsecutiveBeds" : 8,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 6,
+      "bedPatientShare" : 0.7049180327868853,
+      "maxConsecutiveBeds" : 14,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 7,
+      "bedPatientShare" : 0.6470588235294118,
+      "maxConsecutiveBeds" : 5,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 8,
+      "bedPatientShare" : 0.4528301886792453,
+      "maxConsecutiveBeds" : 6,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 9,
+      "bedPatientShare" : 0.5454545454545454,
+      "maxConsecutiveBeds" : 10,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 10,
+      "bedPatientShare" : 0.6428571428571429,
+      "maxConsecutiveBeds" : 8,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 11,
+      "bedPatientShare" : 0.7368421052631579,
+      "maxConsecutiveBeds" : 9,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 12,
+      "bedPatientShare" : 0.375,
+      "maxConsecutiveBeds" : 4,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 13,
+      "bedPatientShare" : 0.5428571428571428,
+      "maxConsecutiveBeds" : 6,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    }, {
+      "porterId" : 14,
+      "bedPatientShare" : 0.46875,
+      "maxConsecutiveBeds" : 5,
+      "medianConsecutiveBedStreakMetric" : 1.0
+    }, {
+      "porterId" : 15,
+      "bedPatientShare" : 0.5666666666666667,
+      "maxConsecutiveBeds" : 8,
+      "medianConsecutiveBedStreakMetric" : 2.0
+    } ]
+  },
+  "wheelchairDepot" : {
+    "note" : "WC_indicator / depot timeline (printer.cpp ~682–866) not replicated in Java; numeric fields below are placeholders.",
+    "wcMaxChairsInUse" : 0,
+    "wcMaxUsageFraction" : 0.0,
+    "depotMinBalancePlaceholder" : [ ],
+    "totalPickUp" : 0.0,
+    "totalDropOff" : 0.0,
+    "avgWalkingToDepotMinutes" : 0.0
+  },
+  "scheduleTimeAggregates" : {
+    "sumTravel" : {
+      "seconds" : 190404,
+      "clock" : "52:53:24"
+    },
+    "sumTransport" : {
+      "seconds" : 215604,
+      "clock" : "59:53:24"
+    },
+    "sumIdle" : {
+      "seconds" : 56366,
+      "clock" : "15:39:26"
+    },
+    "sumDuration" : {
+      "seconds" : 462374,
+      "clock" : "128:26:14"
+    },
+    "meanDurationActiveSeconds" : 28898.375,
+    "meanDurationActiveClock" : "08:01:38",
+    "maxDurationSeconds" : 30846,
+    "maxDurationClock" : "08:34:06",
+    "minDurationActiveSeconds" : 26298,
+    "minDurationActiveClock" : "07:18:18",
+    "durationSpreadSeconds" : 4548,
+    "durationSpreadClock" : "01:15:48",
+    "activePorterCount" : 16,
+    "idlePorterCount" : 0,
+    "fleetTravelShare" : 0.4117965110494967,
+    "fleetTransportShare" : 0.4662978454670894,
+    "fleetIdleShare" : 0.12190564348341386,
+    "schedulesAllChecksTrueCount" : 16,
+    "scheduleCount" : 16,
+    "scheduleValidationPassRate" : 1.0,
+    "byPorter" : [ {
+      "porterId" : 0,
+      "travelSeconds" : 14598,
+      "travelClock" : "04:03:18",
+      "transportSeconds" : 15930,
+      "transportClock" : "04:25:30",
+      "idleSeconds" : 60,
+      "idleClock" : "00:01:00",
+      "durationSeconds" : 30588,
+      "durationClock" : "08:29:48",
+      "realPatientCount" : 76,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 1,
+      "travelSeconds" : 14988,
+      "travelClock" : "04:09:48",
+      "transportSeconds" : 15798,
+      "transportClock" : "04:23:18",
+      "idleSeconds" : 60,
+      "idleClock" : "00:01:00",
+      "durationSeconds" : 30846,
+      "durationClock" : "08:34:06",
+      "realPatientCount" : 64,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 2,
+      "travelSeconds" : 14490,
+      "travelClock" : "04:01:30",
+      "transportSeconds" : 15660,
+      "transportClock" : "04:21:00",
+      "idleSeconds" : 60,
+      "idleClock" : "00:01:00",
+      "durationSeconds" : 30210,
+      "durationClock" : "08:23:30",
+      "realPatientCount" : 61,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 3,
+      "travelSeconds" : 14028,
+      "travelClock" : "03:53:48",
+      "transportSeconds" : 16152,
+      "transportClock" : "04:29:12",
+      "idleSeconds" : 112,
+      "idleClock" : "00:01:52",
+      "durationSeconds" : 30292,
+      "durationClock" : "08:24:52",
+      "realPatientCount" : 59,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 4,
+      "travelSeconds" : 13476,
+      "travelClock" : "03:44:36",
+      "transportSeconds" : 16674,
+      "transportClock" : "04:37:54",
+      "idleSeconds" : 60,
+      "idleClock" : "00:01:00",
+      "durationSeconds" : 30210,
+      "durationClock" : "08:23:30",
+      "realPatientCount" : 63,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 5,
+      "travelSeconds" : 14352,
+      "travelClock" : "03:59:12",
+      "transportSeconds" : 15060,
+      "transportClock" : "04:11:00",
+      "idleSeconds" : 380,
+      "idleClock" : "00:06:20",
+      "durationSeconds" : 29792,
+      "durationClock" : "08:16:32",
+      "realPatientCount" : 51,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 6,
+      "travelSeconds" : 12888,
+      "travelClock" : "03:34:48",
+      "transportSeconds" : 16344,
+      "transportClock" : "04:32:24",
+      "idleSeconds" : 690,
+      "idleClock" : "00:11:30",
+      "durationSeconds" : 29922,
+      "durationClock" : "08:18:42",
+      "realPatientCount" : 61,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 7,
+      "travelSeconds" : 14568,
+      "travelClock" : "04:02:48",
+      "transportSeconds" : 14100,
+      "transportClock" : "03:55:00",
+      "idleSeconds" : 1209,
+      "idleClock" : "00:20:09",
+      "durationSeconds" : 29877,
+      "durationClock" : "08:17:57",
+      "realPatientCount" : 51,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 8,
+      "travelSeconds" : 12540,
+      "travelClock" : "03:29:00",
+      "transportSeconds" : 13734,
+      "transportClock" : "03:48:54",
+      "idleSeconds" : 3166,
+      "idleClock" : "00:52:46",
+      "durationSeconds" : 29440,
+      "durationClock" : "08:10:40",
+      "realPatientCount" : 53,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 9,
+      "travelSeconds" : 11142,
+      "travelClock" : "03:05:42",
+      "transportSeconds" : 13290,
+      "transportClock" : "03:41:30",
+      "idleSeconds" : 3945,
+      "idleClock" : "01:05:45",
+      "durationSeconds" : 28377,
+      "durationClock" : "07:52:57",
+      "realPatientCount" : 44,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 10,
+      "travelSeconds" : 11256,
+      "travelClock" : "03:07:36",
+      "transportSeconds" : 12864,
+      "transportClock" : "03:34:24",
+      "idleSeconds" : 2993,
+      "idleClock" : "00:49:53",
+      "durationSeconds" : 27113,
+      "durationClock" : "07:31:53",
+      "realPatientCount" : 42,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 11,
+      "travelSeconds" : 8424,
+      "travelClock" : "02:20:24",
+      "transportSeconds" : 11940,
+      "transportClock" : "03:19:00",
+      "idleSeconds" : 6657,
+      "idleClock" : "01:50:57",
+      "durationSeconds" : 27021,
+      "durationClock" : "07:30:21",
+      "realPatientCount" : 38,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 12,
+      "travelSeconds" : 8268,
+      "travelClock" : "02:17:48",
+      "transportSeconds" : 10632,
+      "transportClock" : "02:57:12",
+      "idleSeconds" : 10032,
+      "idleClock" : "02:47:12",
+      "durationSeconds" : 28932,
+      "durationClock" : "08:02:12",
+      "realPatientCount" : 40,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 13,
+      "travelSeconds" : 9072,
+      "travelClock" : "02:31:12",
+      "transportSeconds" : 9552,
+      "transportClock" : "02:39:12",
+      "idleSeconds" : 7686,
+      "idleClock" : "02:08:06",
+      "durationSeconds" : 26310,
+      "durationClock" : "07:18:30",
+      "realPatientCount" : 35,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 14,
+      "travelSeconds" : 7722,
+      "travelClock" : "02:08:42",
+      "transportSeconds" : 9084,
+      "transportClock" : "02:31:24",
+      "idleSeconds" : 10340,
+      "idleClock" : "02:52:20",
+      "durationSeconds" : 27146,
+      "durationClock" : "07:32:26",
+      "realPatientCount" : 32,
+      "allValidationsTrue" : true
+    }, {
+      "porterId" : 15,
+      "travelSeconds" : 8592,
+      "travelClock" : "02:23:12",
+      "transportSeconds" : 8790,
+      "transportClock" : "02:26:30",
+      "idleSeconds" : 8916,
+      "idleClock" : "02:28:36",
+      "durationSeconds" : 26298,
+      "durationClock" : "07:18:18",
+      "realPatientCount" : 30,
+      "allValidationsTrue" : true
+    } ]
+  }
+}

@@ -10,7 +10,7 @@
 # Java/Gradle/Maven build artifacts
 target/
 build/
-out/
+# out/
 *.class
 *.jar
 *.war
@@ -31,5 +31,5 @@ __pycache__/
 *.swp
 
 # Generated data and experiment outputs
-files/output/
-generated_input.json
+# files/output/
+# generated_input.json
