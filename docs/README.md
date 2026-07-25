@@ -4,6 +4,7 @@ This folder contains reference material for JSON formats and tooling.
 
 | Document | Purpose |
 |----------|---------|
+| [setup-from-zero.md](setup-from-zero.md) | Clone, install JDK/Maven, build, and run from a fresh machine. |
 | [input-json.md](input-json.md) | Problem instance JSON (`InputDto`): patients, depots, travel times. |
 | [experiment-json.md](experiment-json.md) | Experiment configuration JSON consumed by `ExperimentRunner`. |
 | [output-solution-json.md](output-solution-json.md) | Serialized solution (`*_solution.json`). |

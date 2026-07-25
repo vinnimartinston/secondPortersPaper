@@ -29,6 +29,8 @@ Agent-oriented Java rules: [`docs/AGENTS.md`](docs/AGENTS.md) and [`docs/guideli
 - **Apache Maven** 3.9+
 - (Optional dashboard) **Python 3.10+** with `pip`
 
+**Full setup from scratch (Git clone, install, build, run):** **[docs/setup-from-zero.md](docs/setup-from-zero.md)**.
+
 Clone and enter the repository:
 
 ```bash
