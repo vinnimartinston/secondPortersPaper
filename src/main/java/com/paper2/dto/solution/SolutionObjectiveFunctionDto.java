@@ -6,8 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Objective function snapshot for {@link SolutionResultDto}: scalar value, evaluation horizon, penalty
- * parameters, tardiness and depot-penalty components (auditing {@link com.paper2.domain.Solution#getObjectiveValue()}).
+ * Objective function snapshot for {@link SolutionResultDto}: scalar value and components from the committed
+ * {@link com.paper2.domain.FinalSchedule} plan ({@link com.paper2.metrics.FinalScheduleObjectiveTerms}).
  */
 @Data
 @NoArgsConstructor
@@ -20,11 +20,11 @@ import lombok.NoArgsConstructor;
     "depotInventoryViolationPenaltyCoefficient",
     "totalWheelchairViolationSecondsBelowZero",
     "depotPenaltyTerm",
-    "unweightedTardinessSumSeconds"
+    "sumWeightedTardiness"
 })
 public class SolutionObjectiveFunctionDto {
 
-    /** Stored objective on the solution (model-specific aggregate). */
+    /** {@code sumWeightedTardiness + depotPenaltyTerm} on the final plan (clamped to {@code int} when stored here). */
     private int objectiveValue;
 
     /** Seconds since midnight; shift / initial simulator clock ({@link com.paper2.domain.DomainConstants#SCHEDULE_START_TIME_SECONDS}). */
@@ -40,11 +40,8 @@ public class SolutionObjectiveFunctionDto {
     private long totalWheelchairViolationSecondsBelowZero;
     /** {@code totalWheelchairViolationSecondsBelowZero × depotInventoryViolationPenaltyCoefficient}. */
     private long depotPenaltyTerm;
-    /**
-     * Sum of unweighted tardiness on working schedules (non-dummy). With depot penalty,
-     * {@link com.paper2.domain.Solution#getObjectiveValue()} is {@code min(int max, unweightedTardinessSumSeconds + depotPenaltyTerm)}.
-     */
-    private long unweightedTardinessSumSeconds;
+    /** Σ (lateness seconds × priority weight) on all real patients in {@link com.paper2.domain.Solution#getFinalSchedules()}. */
+    private long sumWeightedTardiness;
 
     /** Matches {@link JsonPropertyOrder} / export shape; single ctor keeps serializer simple. */
     @SuppressWarnings("java:S107")
@@ -57,7 +54,7 @@ public class SolutionObjectiveFunctionDto {
             int depotInventoryViolationPenaltyCoefficient,
             long totalWheelchairViolationSecondsBelowZero,
             long depotPenaltyTerm,
-            long unweightedTardinessSumSeconds) {
+            long sumWeightedTardiness) {
         this.objectiveValue = objectiveValue;
         this.evaluationWindowStartSeconds = evaluationWindowStartSeconds;
         this.evaluationWindowStartClock = evaluationWindowStartClock;
@@ -66,6 +63,6 @@ public class SolutionObjectiveFunctionDto {
         this.depotInventoryViolationPenaltyCoefficient = depotInventoryViolationPenaltyCoefficient;
         this.totalWheelchairViolationSecondsBelowZero = totalWheelchairViolationSecondsBelowZero;
         this.depotPenaltyTerm = depotPenaltyTerm;
-        this.unweightedTardinessSumSeconds = unweightedTardinessSumSeconds;
+        this.sumWeightedTardiness = sumWeightedTardiness;
     }
 }

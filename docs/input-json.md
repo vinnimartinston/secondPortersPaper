@@ -14,7 +14,7 @@ An **input** file describes one problem instance: patients, porters (stretchers)
 | `depots` | array | Depot id, grid `location`, and `initialWheelchairInventory` at the start of the horizon. |
 | `timeMatrix` | object | Contains `graph`: a square matrix of **integer travel times** (seconds) between node indices referenced by patient `origin` / `destination` and depot locations. |
 
-Optional **`metadata`** may appear on inputs produced by tooling (scenario stem, depot count, etc.); the core simulator consumes the fields above.
+Optional **`metadata`** may appear on inputs produced by tooling (scenario stem, depot count, `roundTripsPercentage`, `wheelchairPercentage`, etc.); the core simulator consumes the fields above.
 
 ## Each `patients[]` entry
 

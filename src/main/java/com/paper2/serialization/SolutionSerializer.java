@@ -46,8 +46,8 @@
     import com.paper2.metrics.ScheduleTimeFormat;
     import com.paper2.metrics.inventory.DepotSelectionByObjective;
     import com.paper2.metrics.inventory.WheelchairDepotEdgeRules;
+    import com.paper2.metrics.FinalScheduleObjectiveTerms;
     import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
-    import com.paper2.simulator.solver.localsearch.TotalUnweightedTardinessObjective;
 
     /**
      * Converts {@link Solution} to {@link SolutionResultDto} / JSON for {@code *_solution.json} files:
@@ -92,9 +92,10 @@ public final class SolutionSerializer {
             List<FinalScheduleSnapshotDto> finalSnapshots = finalSchedulesToDtos(solution);
             String clockStr = ScheduleTimeFormat.clockOrZero(solution.getSimulatorClock());
             DepotInventorySerialization s = computeDepotInventorySerialization(solution);
+            FinalScheduleObjectiveTerms.Result objectiveTerms = FinalScheduleObjectiveTerms.compute(solution);
             SolutionObjectiveFunctionDto objectiveFunction =
                     new SolutionObjectiveFunctionDto(
-                            solution.getObjectiveValue(),
+                            FinalScheduleObjectiveTerms.clampObjectiveToInt(objectiveTerms.objectiveValue()),
                             s.evaluationWindowStartSeconds(),
                             s.evaluationWindowStartClock(),
                             s.evaluationWindowEndExclusiveSeconds(),
@@ -102,7 +103,7 @@ public final class SolutionSerializer {
                             s.depotInventoryViolationPenaltyCoefficient(),
                             s.totalWheelchairViolationSecondsBelowZero(),
                             s.depotPenaltyTerm(),
-                            s.unweightedTardinessSumSeconds());
+                            objectiveTerms.sumWeightedTardiness());
             SolutionDepotInventoryDto depotInventory = new SolutionDepotInventoryDto(s.depotRows());
             InstanceMetadataDto metadata = toMetadataDto(solution.getMetadata());
             return new SolutionResultDto(metadata, clockStr, objectiveFunction, finalSnapshots, depotInventory);
@@ -117,7 +118,7 @@ public final class SolutionSerializer {
                     metadata.getProfile(),
                     metadata.getAmountOfDepots(),
                     metadata.getRoundTripsPercentage(),
-                    metadata.getWheelchairChangesPercentage(),
+                    metadata.getWheelchairPercentage(),
                     metadata.getInstanceName());
         }
 
@@ -129,7 +130,6 @@ public final class SolutionSerializer {
                 int depotInventoryViolationPenaltyCoefficient,
                 long totalWheelchairViolationSecondsBelowZero,
                 long depotPenaltyTerm,
-                long unweightedTardinessSumSeconds,
                 List<DepotSolutionSnapshotDto> depotRows) {}
 
         /**
@@ -140,12 +140,15 @@ public final class SolutionSerializer {
             int shiftStartSeconds = DomainConstants.SCHEDULE_START_TIME_SECONDS;
             String shiftStartClock =
                     ScheduleTimeFormat.clockOrZero(new TimeObject(shiftStartSeconds));
+            List<List<Patient>> finalChains =
+                    DepotSelectionByObjective.chainOverridesFromFinalSchedulesByPorterId(solution);
             int evaluationWindowStartSeconds =
                     WheelchairDepotViolationSecondsCalculator.evaluationWindowStartSeconds(solution);
             String evaluationWindowStartClock =
                     ScheduleTimeFormat.clockOrZero(new TimeObject(evaluationWindowStartSeconds));
             int windowEndExclusiveSeconds =
-                    WheelchairDepotViolationSecondsCalculator.evaluationWindowEndExclusiveSeconds(solution);
+                    WheelchairDepotViolationSecondsCalculator.evaluationWindowEndExclusiveSeconds(
+                            solution, finalChains);
             String lastIncludedClock;
             if (windowEndExclusiveSeconds > shiftStartSeconds) {
                 lastIncludedClock =
@@ -158,7 +161,8 @@ public final class SolutionSerializer {
             Map<Integer, Long> violationSecondsByDepotId =
                     domainDepots.isEmpty()
                             ? Map.of()
-                            : WheelchairDepotViolationSecondsCalculator.violationSecondsPerDepot(solution);
+                            : WheelchairDepotViolationSecondsCalculator.violationSecondsPerDepot(
+                                    solution, finalChains);
             long totalViolationSeconds = 0;
             for (long segmentSeconds : violationSecondsByDepotId.values()) {
                 totalViolationSeconds += segmentSeconds;
@@ -166,7 +170,6 @@ public final class SolutionSerializer {
 
             int penaltyCoefficient = solution.getDepotInventoryViolationPenaltyCoefficient();
             long depotPenaltyTerm = totalViolationSeconds * penaltyCoefficient;
-            long unweightedTardinessSumSeconds = TotalUnweightedTardinessObjective.evaluate(solution);
 
             SolutionInventoryState inventoryState = solution.getInventoryState();
             List<DepotSolutionSnapshotDto> depotRows = new ArrayList<>();
@@ -200,7 +203,6 @@ public final class SolutionSerializer {
                     penaltyCoefficient,
                     totalViolationSeconds,
                     depotPenaltyTerm,
-                    unweightedTardinessSumSeconds,
                     depotRows);
         }
 

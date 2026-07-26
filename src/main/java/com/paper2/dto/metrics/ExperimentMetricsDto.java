@@ -3,6 +3,7 @@ package com.paper2.dto.metrics;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import lombok.AllArgsConstructor;
@@ -11,8 +12,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Aggregated metrics (mirror of {@code print_resume_results} / {@code print_final_results} in
- * {@code printer.cpp}): what the Java domain can compute today; wheelchair/depot and CP-solver fields use
- * placeholders when not applicable.
+ * {@code printer.cpp}).
  */
 @Data
 @NoArgsConstructor
@@ -38,15 +38,62 @@ public class ExperimentMetricsDto {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonPropertyOrder({"scheduleDurationSeconds", "scheduleDurationClock", "objectiveFunction"})
     public static class Summary {
-        /** Maximum {@code endTime} among patients (seconds since midnight). */
-        private int makespanSeconds;
-        private String makespanClock;
-        /** Σ max(0, end−due)·weight (aligned with {@link com.paper2.domain.Patient#calculateObjectiveValue()}). */
-        private double sumWeightedTardiness;
+        /** Elapsed seconds from schedule start (08:00) to last patient end; same as {@link SetupIdle#horizonSeconds}. */
+        private int scheduleDurationSeconds;
+        /** Same span as {@link #scheduleDurationSeconds}, as duration {@code HH:MM:SS}. */
+        private String scheduleDurationClock;
+        private SummaryObjectiveFunction objectiveFunction = new SummaryObjectiveFunction();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonPropertyOrder({"value", "tardinessTerm", "depotPenaltyTerm"})
+    public static class SummaryObjectiveFunction {
+        /** {@code tardinessTerm.value + depotPenaltyTerm.value} on the committed final plan (clamped to {@code int}). */
+        private int value;
+        private TardinessTerm tardinessTerm = new TardinessTerm();
+        private DepotPenaltyTerm depotPenaltyTerm = new DepotPenaltyTerm();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonPropertyOrder({"value", "sumUnweightedTardinessSeconds", "byPriority"})
+    public static class TardinessTerm {
+        /** Σ (lateness seconds × priority weight) on final schedules. */
+        private double value;
+        /** Σ raw lateness seconds on final schedules. */
         private double sumUnweightedTardinessSeconds;
-        /** Value stored in {@link com.paper2.domain.Solution#getObjectiveValue()} (may be 0 if not updated). */
-        private int objectiveValueFromSolution;
+        private List<TardinessTermByPriority> byPriority = new ArrayList<>();
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonPropertyOrder({"priority", "value", "coefficient", "sumUnweightedTardinessSeconds"})
+    public static class TardinessTermByPriority {
+        private int priority;
+        /** {@code sumUnweightedTardinessSeconds × coefficient}. */
+        private double value;
+        /** Priority weight ({@code penalty weight} from input). */
+        private int coefficient;
+        private double sumUnweightedTardinessSeconds;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonPropertyOrder({"value", "coefficient", "totalWheelchairViolationSecondsBelowZero"})
+    public static class DepotPenaltyTerm {
+        /** {@code totalWheelchairViolationSecondsBelowZero × coefficient}. */
+        private long value;
+        /** Soft-penalty coefficient from the experiment JSON ({@code penalty}). */
+        private int coefficient;
+        /** Seconds with negative wheelchair stock summed across depots (evaluation horizon). */
+        private long totalWheelchairViolationSecondsBelowZero;
     }
 
     @Data
@@ -55,6 +102,8 @@ public class ExperimentMetricsDto {
     public static class PriorityBreakdown {
         private int priority;
         private int patientCount;
+        /** Σ raw tardiness (s) at this priority, in minutes (check: sum over priorities × 60 ≈ {@link TardinessTerm#sumUnweightedTardinessSeconds}). */
+        private double sumUnweightedTardinessMinutes;
         /** Mean raw tardiness (s) → minutes per patient at this priority. */
         private double avgUnweightedTardinessMinutes;
         private int tardyPatientCount;
@@ -221,14 +270,19 @@ public class ExperimentMetricsDto {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class WheelchairDepot {
-        private String note =
-                "WC_indicator / depot timeline (printer.cpp ~682–866) not replicated in Java; numeric fields below are placeholders.";
-        private int wcMaxChairsInUse;
-        private double wcMaxUsageFraction;
-        private List<Double> depotMinBalancePlaceholder = List.of();
+        /** Peak concurrent wheelchairs out of depots ({@code WC_max} in legacy {@code printer.cpp}). */
+        private int maxWheelchairsUsedAtSameTime;
+        /** Share of horizon seconds at that peak ({@code WC_max_usage} in legacy {@code printer.cpp}). */
+        private double timeShareUsingMaxWheelchairs;
+        /** Per depot (sorted by id): {@code -min(depotBalanceTracker)} over the horizon. */
+        private List<Double> depotMinBalance = List.of();
+        /** Total depot pick-up events across depots. */
         private double totalPickUp;
+        /** Total depot drop-off events across depots. */
         private double totalDropOff;
+        /** Mean walk/setup time to depot per pick-up or drop-off visit, in minutes. */
         private double avgWalkingToDepotMinutes;
     }
 

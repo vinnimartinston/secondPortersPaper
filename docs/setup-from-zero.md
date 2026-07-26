@@ -11,19 +11,48 @@ Guia passo a passo para clonar o repositório, instalar dependências e rodar o 
 | Apache Maven | **3.9+** |
 | Python (opcional, dashboard Streamlit) | **3.10+** |
 
+> **macOS:** você **não precisa** instalar o **Xcode completo** (App Store, ~10–15 GB). Basta Git sozinho ou as **Command Line Tools** (pacote compacto da Apple, ~1–2 GB).
+
 ---
 
 ## 1. Instalar Git
 
 ### macOS
 
-Abra o **Terminal** e instale as ferramentas de linha de comando da Apple (inclui Git):
+Escolha **uma** opção:
+
+#### Opção A — Só Git (mais leve, ~50 MB)
+
+Ideal se você quer apenas clonar o repositório com o mínimo de download.
+
+1. Baixe o instalador em: https://git-scm.com/download/mac  
+2. Abra o `.dmg`, execute o instalador e conclua o assistente.  
+3. Feche e abra um **novo** Terminal.
+
+```bash
+git --version
+```
+
+#### Opção B — Command Line Tools (compacta, ~1–2 GB)
+
+Instala Git **e** ferramentas que o **Homebrew** costuma exigir (recomendada se você for seguir o passo 3 com `brew`).
 
 ```bash
 xcode-select --install
 ```
 
-Siga o assistente na tela (Concordar → Instalar).
+Na janela que abrir, instale **“Command Line Tools”** — **não** o Xcode completo da App Store.
+
+#### Opção C — Git via Homebrew (depois do passo 3)
+
+Se você já instalou o Homebrew:
+
+```bash
+brew install git
+git --version
+```
+
+> **Não instale** o Xcode completo só por causa deste projeto. Ele não é necessário para Java/Maven.
 
 ### Linux (Debian/Ubuntu)
 
@@ -85,6 +114,8 @@ git pull origin main
 ### macOS (recomendado: Homebrew)
 
 **3.1 — Instalar Homebrew** (se ainda não tiver):
+
+Se ainda não fez o passo 1 opção B, o instalador do Homebrew pode pedir as **Command Line Tools** (pacote compacto — aceite; ainda **não** é o Xcode completo).
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -230,6 +261,87 @@ deactivate
 
 Para rodar pelo editor: abra `ExperimentRunner.java` e use **Run** acima do método `main`.
 
+**Este projeto não exige configuração extra** (não há pasta `.vscode` obrigatória no repositório). Git, Java, Maven e `mvn exec:java` funcionam no **Terminal do macOS** normalmente.
+
+### Terminal do VS Code / Cursor não abre
+
+Se `Terminal → New Terminal` (`` Ctrl+` ``) não funcionar, o problema é do editor ou do shell — **não** do Paper2.
+
+**1. Teste o Terminal do macOS primeiro**
+
+Abra **Terminal.app** (Spotlight → `Terminal`) e rode:
+
+```bash
+echo ok
+zsh --version
+cd ~/Projects/Paper2
+mvn -q compile
+```
+
+Se falhar aqui, corrija o shell antes do VS Code (passo 2). Se funcionar, use o Terminal.app para todo o setup; o projeto roda igual.
+
+**2. Erro comum: `~/.zshrc` quebrado**
+
+Linhas mal coladas no passo 3.4 (JAVA_HOME) podem fazer o shell **abrir e fechar na hora**. No Terminal.app:
+
+```bash
+zsh -n ~/.zshrc
+```
+
+Se aparecer erro de sintaxe, edite e corrija:
+
+```bash
+nano ~/.zshrc
+```
+
+As linhas corretas são:
+
+```bash
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+```
+
+Depois:
+
+```bash
+source ~/.zshrc
+```
+
+**3. Definir o shell padrão no VS Code**
+
+`Cmd+Shift+P` → **Terminal: Select Default Profile** → escolha **zsh**.
+
+Ou em **Settings** (`Cmd+,`), busque `terminal default profile osx` e defina **zsh**.
+
+**4. Forçar caminho do shell (se ainda falhar)**
+
+`Cmd+Shift+P` → **Preferences: Open User Settings (JSON)** e adicione:
+
+```json
+{
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.profiles.osx": {
+    "zsh": {
+      "path": "/bin/zsh",
+      "args": ["-l"]
+    }
+  }
+}
+```
+
+Salve, **Reload Window** (`Cmd+Shift+P` → **Developer: Reload Window**) e tente o terminal de novo.
+
+**5. Outras causas**
+
+| Sintoma | O que fazer |
+|---------|-------------|
+| Terminal abre e fecha em 1 s | Quase sempre `~/.zshrc` com erro (passo 2). |
+| “Launching the shell… Failed” | Confirme `/bin/zsh` existe: `ls -l /bin/zsh`. |
+| VS Code pede permissão / não abre nada | **System Settings → Privacy & Security** — permita VS Code se solicitado; reinicie o VS Code. |
+| Só no VS Code, Terminal.app OK | Passos 3–4; ou reinstale VS Code de [code.visualstudio.com](https://code.visualstudio.com/). |
+
+**Alternativa:** ignore o terminal integrado e use só o **Terminal.app** para `git`, `mvn` e `streamlit`. Não há passo extra no Paper2 por causa disso.
+
 ---
 
 ## 9. Resumo rápido (já com tudo instalado)
@@ -248,12 +360,14 @@ mvn -q exec:java
 
 | Erro | O que fazer |
 |------|-------------|
-| `git: command not found` | Instale Git (passo 1). |
+| `git: command not found` | Instale Git (passo 1, opção A ou B). |
+| Homebrew pede “Command Line Tools” | Normal. Instale via `xcode-select --install` (pacote compacto, não o Xcode completo). |
 | `Permission denied (publickey)` no clone SSH | Use HTTPS (opção A) ou configure chave SSH no GitHub. |
 | `java: command not found` | Instale JDK 21 e configure `JAVA_HOME` (passo 3). |
 | `release version 21 not supported` | `java -version` não é 21; ajuste `JAVA_HOME`. |
 | `mvn: command not found` | Instale Maven (`brew install maven` ou `apt install maven`). |
 | Erros de Lombok no editor | Instale **Extension Pack for Java**; **Java: Clean Java Language Server Workspace** → reload. |
+| Terminal do VS Code não abre | Veja seção 8 acima; use Terminal.app enquanto corrige. Causa frequente: `~/.zshrc` inválido. |
 | Clone OK mas pasta vazia | Verifique se clonou na branch `main`: `git checkout main`. |
 
 ---

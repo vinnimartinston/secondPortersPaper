@@ -14,6 +14,6 @@ public class InstanceMetadataDto implements Serializable {
     private int profile;
     private int amountOfDepots;
     private int roundTripsPercentage;
-    private int wheelchairChangesPercentage;
+    private int wheelchairPercentage;
     private String instanceName;
 }

@@ -15,19 +15,19 @@ Java mapping: [SolutionResultDto](../src/main/java/com/paper2/dto/solution/Solut
 
 ## Object `objectiveFunction`
 
-All scalar FO-related fields used to audit [Solution.getObjectiveValue()](../src/main/java/com/paper2/domain/Solution.java) and the unweighted-tardiness / depot-penalty model:
+All scalar FO-related fields from the committed final plan ([FinalScheduleObjectiveTerms](../src/main/java/com/paper2/metrics/FinalScheduleObjectiveTerms.java)):
 
 | Field | Type | Description |
 |--------|------|-------------|
-| `objectiveValue` | int | Stored objective on the solution. |
+| `objectiveValue` | int | `sumWeightedTardiness + depotPenaltyTerm` (clamped to `int`). |
 | `evaluationWindowStartSeconds` | int | Start of evaluation window (seconds since midnight). |
 | `evaluationWindowStartClock` | string | Same as `HH:MM:SS`. |
 | `evaluationWindowEndExclusiveSeconds` | int | Half-open horizon end (exclusive). |
 | `evaluationHorizonLastIncludedSecondClock` | string | Clock for the last second included in the violation integral. |
 | `depotInventoryViolationPenaltyCoefficient` | int | Multiplier for warehouse violation seconds. |
-| `totalWheelchairViolationSecondsBelowZero` | long | Total violation-integral seconds (all depots). |
+| `totalWheelchairViolationSecondsBelowZero` | long | Total violation-integral seconds (all depots, final routes). |
 | `depotPenaltyTerm` | long | `totalWheelchairViolationSecondsBelowZero × coefficient`. |
-| `unweightedTardinessSumSeconds` | long | Sum of unweighted tardiness on working schedules (non-dummy). |
+| `sumWeightedTardiness` | long | Σ (lateness seconds × priority weight) on all real patients in `finalSchedules`. |
 
 DTO: [SolutionObjectiveFunctionDto](../src/main/java/com/paper2/dto/solution/SolutionObjectiveFunctionDto.java).
 
@@ -121,7 +121,7 @@ Each element is a snapshot of a real request in service order:
     "depotInventoryViolationPenaltyCoefficient": 100000,
     "totalWheelchairViolationSecondsBelowZero": 0,
     "depotPenaltyTerm": 0,
-    "unweightedTardinessSumSeconds": 1200
+    "sumWeightedTardiness": 20447
   },
   "finalSchedules": [
     {

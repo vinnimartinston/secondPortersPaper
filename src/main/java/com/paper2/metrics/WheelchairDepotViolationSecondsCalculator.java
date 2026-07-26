@@ -38,12 +38,18 @@ public final class WheelchairDepotViolationSecondsCalculator {
     }
 
     public static Map<Integer, Long> violationSecondsPerDepot(Solution solution) {
+        return violationSecondsPerDepot(solution, null);
+    }
+
+    public static Map<Integer, Long> violationSecondsPerDepot(
+            Solution solution, List<List<Patient>> chainOverrideByScheduleIndex) {
         WheelchairDepotEdgeRules.DepotPerLeg legDepot =
                 DepotSelectionByObjective.resolver(
-                        DepotSelectionByObjective.buildPlan(solution, null),
+                        DepotSelectionByObjective.buildPlan(solution, chainOverrideByScheduleIndex),
                         solution.getDepots(),
                         solution.getGraph());
-        return new LinkedHashMap<>(computeViolationSweep(solution, null, legDepot).secondsByDepotId());
+        return new LinkedHashMap<>(
+                computeViolationSweep(solution, chainOverrideByScheduleIndex, legDepot).secondsByDepotId());
     }
 
     /**

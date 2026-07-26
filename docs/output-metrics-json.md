@@ -4,6 +4,16 @@ Aggregated metrics computed by [SolutionMetricsCalculator](../src/main/java/com/
 
 Main mapping: [ExperimentMetricsDto](../src/main/java/com/paper2/dto/metrics/ExperimentMetricsDto.java).
 
+## Regenerating metrics without re-simulating
+
+[MetricsRegenerator](../src/main/java/com/paper2/runner/MetricsRegenerator.java) rebuilds every `*_metrics.json` under `files/output/` from the matching `*_solution.json` and `files/input/{stem}.json`. It preserves `simulatorWallTimeSeconds` from the existing metrics file when present.
+
+```bash
+mvn -q exec:java -Dexec.mainClass=com.paper2.runner.MetricsRegenerator
+```
+
+Optional output root: `mvn -q exec:java -Dexec.mainClass=com.paper2.runner.MetricsRegenerator -Dexec.args="files/output"`.
+
 ## Top-level fields
 
 | Field | Type | Description |
@@ -17,11 +27,33 @@ Main mapping: [ExperimentMetricsDto](../src/main/java/com/paper2/dto/metrics/Exp
 
 | Field | Description |
 |--------|-------------|
-| `makespanSeconds` | Maximum `endTime` among real patients (seconds since midnight). |
-| `makespanClock` | Same instant as `HH:MM:SS`. |
-| `sumWeightedTardiness` | Σ (tardiness in seconds × weight) over real patients. |
-| `sumUnweightedTardinessSeconds` | Σ raw tardiness in seconds. |
-| `objectiveValueFromSolution` | Value from `Solution.getObjectiveValue()` (may differ from weighted sum if the solver does not update the field). |
+| `scheduleDurationSeconds` | Elapsed seconds from schedule start (08:00) to last patient end; equals `setupIdle.horizonSeconds`. |
+| `scheduleDurationClock` | Same span as duration `HH:MM:SS` (not a time-of-day). |
+| `objectiveFunction` | Nested objective snapshot on the committed final plan (see below). |
+
+### `summary.objectiveFunction`
+
+| Field | Description |
+|--------|-------------|
+| `value` | `tardinessTerm.value + depotPenaltyTerm.value` (clamped to `int`). |
+| `tardinessTerm` | Weighted tardiness term and per-priority breakdown. |
+| `depotPenaltyTerm` | Wheelchair depot violation penalty term. |
+
+### `summary.objectiveFunction.tardinessTerm`
+
+| Field | Description |
+|--------|-------------|
+| `value` | Σ (tardiness in seconds × priority weight) on final schedules. |
+| `sumUnweightedTardinessSeconds` | Σ raw tardiness in seconds on final schedules. |
+| `byPriority` | Per priority: `priority`, `value` (= `sumUnweightedTardinessSeconds × coefficient`), `coefficient` (priority weight), `sumUnweightedTardinessSeconds`. |
+
+### `summary.objectiveFunction.depotPenaltyTerm`
+
+| Field | Description |
+|--------|-------------|
+| `value` | `totalWheelchairViolationSecondsBelowZero × coefficient`. |
+| `coefficient` | Experiment penalty coefficient (`penalty` in experiment JSON). |
+| `totalWheelchairViolationSecondsBelowZero` | Seconds with negative wheelchair stock (all depots, evaluation horizon). |
 
 ## `tardiness`
 
@@ -30,7 +62,7 @@ Main mapping: [ExperimentMetricsDto](../src/main/java/com/paper2/dto/metrics/Exp
 | `countTardinessZero` | Patients with zero tardiness. |
 | `countTardinessPositiveUpTo1800s` | Tardiness in (0, 1800] seconds. |
 | `countTardinessAbove1800s` | Tardiness &gt; 1800 seconds. |
-| `byPriority` | List of objects per priority level: `priority`, `patientCount`, `avgUnweightedTardinessMinutes`, `tardyPatientCount`, `tardyPatientShare`. |
+| `byPriority` | List of objects per priority level: `priority`, `patientCount`, `sumUnweightedTardinessMinutes`, `avgUnweightedTardinessMinutes`, `tardyPatientCount`, `tardyPatientShare`. |
 | `meanUnweightedTardinessMinutesAllPatients` | Global mean raw tardiness in minutes per patient. |
 
 ## `response`
@@ -50,7 +82,7 @@ Main mapping: [ExperimentMetricsDto](../src/main/java/com/paper2/dto/metrics/Exp
 | `sumIdleClock` | `sumIdleSeconds` as duration `HH:MM:SS`. |
 | `avgIdleMinutesPerPorter` | Mean idle per porter (minutes). |
 | `idleTimeShareOfHorizon` | Mean idle per porter / horizon (minutes), analogous to idle percentage in C++. |
-| `horizonSeconds` | `makespanSeconds - scheduleStart` (e.g. from 08:00). |
+| `horizonSeconds` | Elapsed seconds from schedule start (08:00) to last patient end (same as `summary.scheduleDurationSeconds`). |
 | `idleNote` | `null` if idle was computed; message if `Solution` has no `Graph`. |
 
 ## `porterEffort`
@@ -66,7 +98,16 @@ Per-porter metrics on **bed share** and consecutive sequences:
 
 ## `wheelchairDepot`
 
-Reserved block for depot / chair indicators aligned with legacy `printer.cpp`. In current Java, numeric fields may be **placeholders** (zeros or empty); the example `note` explains that limitation.
+Wheelchair / depot KPIs from [WheelchairDepotMetricsCalculator](../src/main/java/com/paper2/metrics/WheelchairDepotMetricsCalculator.java), aligned with legacy `WC_indicator` / `print_chairs_infos` in `printer.cpp`:
+
+| Field | Description |
+|--------|-------------|
+| `maxWheelchairsUsedAtSameTime` | Peak concurrent wheelchairs checked out of depots (`WC_max`). |
+| `timeShareUsingMaxWheelchairs` | Fraction of horizon seconds at that peak (`WC_max_usage`). |
+| `depotMinBalance` | Per depot (sorted by id): worst deficit vs. zero baseline (`-min(balanceTracker)`). |
+| `totalPickUp` | Total pick-up events at depots. |
+| `totalDropOff` | Total drop-off events at depots. |
+| `avgWalkingToDepotMinutes` | Mean travel/setup time per depot visit (minutes). |
 
 ## `scheduleTimeAggregates`
 
@@ -100,11 +141,21 @@ Aggregates from [PorterScheduleRouteMetrics](../src/main/java/com/paper2/metrics
   "transportedPatientCount": 50,
   "simulatorWallTimeSeconds": 1.7,
   "summary": {
-    "makespanSeconds": 32442,
-    "makespanClock": "09:00:42",
-    "sumWeightedTardiness": 162336.0,
-    "sumUnweightedTardinessSeconds": 10110.0,
-    "objectiveValueFromSolution": 20447
+    "scheduleDurationSeconds": 3642,
+    "scheduleDurationClock": "01:00:42",
+    "objectiveFunction": {
+      "value": 20447,
+      "tardinessTerm": {
+        "value": 162336.0,
+        "sumUnweightedTardinessSeconds": 10110.0,
+        "byPriority": []
+      },
+      "depotPenaltyTerm": {
+        "value": 0,
+        "coefficient": 100000,
+        "totalWheelchairViolationSecondsBelowZero": 0
+      }
+    }
   },
   "tardiness": { "countTardinessZero": 0, "countTardinessPositiveUpTo1800s": 0, "countTardinessAbove1800s": 0, "byPriority": [], "meanUnweightedTardinessMinutesAllPatients": 0 },
   "response": { "byPriority": [], "meanResponseMinutesAllPatients": 0 },
@@ -119,7 +170,7 @@ Aggregates from [PorterScheduleRouteMetrics](../src/main/java/com/paper2/metrics
     "idleNote": null
   },
   "porterEffort": { "effortRateMean": 0, "maxBedShareAcrossPorters": 0, "minBedShareAcrossPorters": 0, "byPorter": [] },
-  "wheelchairDepot": { "note": null, "wcMaxChairsInUse": 0, "wcMaxUsageFraction": 0.0, "depotMinBalancePlaceholder": [], "totalPickUp": 0.0, "totalDropOff": 0.0, "avgWalkingToDepotMinutes": 0.0 },
+  "wheelchairDepot": { "maxWheelchairsUsedAtSameTime": 0, "timeShareUsingMaxWheelchairs": 0.0, "depotMinBalance": [], "totalPickUp": 0.0, "totalDropOff": 0.0, "avgWalkingToDepotMinutes": 0.0 },
   "scheduleTimeAggregates": {
     "sumTravel": { "seconds": 0, "clock": "0:00:00" },
     "sumTransport": { "seconds": 0, "clock": "0:00:00" },

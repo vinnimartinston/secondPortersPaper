@@ -4,12 +4,12 @@
     "profile" : 1,
     "amountOfDepots" : 3,
     "roundTripsPercentage" : 20,
-    "wheelchairChangesPercentage" : 40,
+    "wheelchairPercentage" : 40,
     "instanceName" : "800N1SC3DEP20RT40CH8REP"
   },
   "simulatorClock" : "16:31:42",
   "objectiveFunction" : {
-    "objectiveValue" : 54,
+    "objectiveValue" : 389037,
     "evaluationWindowStartSeconds" : 28800,
     "evaluationWindowStartClock" : "08:00:00",
     "evaluationWindowEndExclusiveSeconds" : 59503,
@@ -17,7 +17,7 @@
     "depotInventoryViolationPenaltyCoefficient" : 100000,
     "totalWheelchairViolationSecondsBelowZero" : 0,
     "depotPenaltyTerm" : 0,
-    "unweightedTardinessSumSeconds" : 54
+    "sumWeightedTardiness" : 389037
   },
   "finalSchedules" : [ {
     "porterId" : 0,

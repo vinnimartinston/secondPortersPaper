@@ -3,8 +3,7 @@ Streamlit dashboard: Gantt of final schedules + depot wheelchair balance (from *
 Run from repo root: streamlit run streamlit/app.py
 """
 
-from __future__ import annotations
-
+from typing import Callable
 import json
 from pathlib import Path
 
@@ -74,82 +73,325 @@ def load_metrics_json_cached(raw: str) -> dict:
     return json.loads(raw)
 
 
-def extract_comparison_metrics(data: dict) -> dict[str, float | None]:
-    """Seven metrics used in the cross-folder comparison table."""
-    tard = data.get("tardiness") or {}
-    resp = data.get("response") or {}
-    sta = data.get("scheduleTimeAggregates") or {}
-    return {
-        "meanUnweightedTardinessMinutesAllPatients": tard.get("meanUnweightedTardinessMinutesAllPatients"),
-        "meanResponseMinutesAllPatients": resp.get("meanResponseMinutesAllPatients"),
-        "meanDurationActiveSeconds": sta.get("meanDurationActiveSeconds"),
-        "maxDurationSeconds": sta.get("maxDurationSeconds"),
-        "fleetTravelShare": sta.get("fleetTravelShare"),
-        "fleetTransportShare": sta.get("fleetTransportShare"),
-        "fleetIdleShare": sta.get("fleetIdleShare"),
-    }
+def minutes_to_hms(minutes: float | None) -> str:
+    if minutes is None or (isinstance(minutes, float) and np.isnan(minutes)):
+        return "—"
+    return seconds_to_hms(int(round(float(minutes) * 60)))
 
 
-COMPARISON_METRIC_LABELS: list[tuple[str, str]] = [
-    ("meanUnweightedTardinessMinutesAllPatients", "meanUnweightedTardinessMinutesAllPatients"),
-    ("meanResponseMinutesAllPatients", "meanResponseMinutesAllPatients"),
-    ("meanDurationActiveSeconds", "meanDurationActiveSeconds"),
-    ("maxDurationSeconds", "maxDurationSeconds"),
-    ("fleetTravelShare", "fleetTravelShare"),
-    ("fleetTransportShare", "fleetTransportShare"),
-    ("fleetIdleShare", "fleetIdleShare"),
-]
+def format_number(value: float | None, *, decimals: int = 0) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "—"
+    if decimals <= 0:
+        return str(int(round(float(value))))
+    return f"{float(value):.{decimals}f}"
 
 
-def folder_metrics_mean_series(folder: Path) -> pd.Series:
-    paths = list_metrics_files(folder)
-    if not paths:
-        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
-    rows = []
-    for mp in paths:
+def format_percent(value: float | None) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "—"
+    return f"{float(value):.2%}"
+
+
+def format_minutes(value: float | None) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "—"
+    return f"{float(value):.2f} min"
+
+
+def _summary(data: dict) -> dict:
+    return data.get("summary") or {}
+
+
+def _objective(data: dict) -> dict:
+    return _summary(data).get("objectiveFunction") or {}
+
+
+def _schedule_agg(data: dict) -> dict:
+    return data.get("scheduleTimeAggregates") or {}
+
+
+def _porter_effort(data: dict) -> dict:
+    return data.get("porterEffort") or {}
+
+
+def _wheelchair_depot(data: dict) -> dict:
+    return data.get("wheelchairDepot") or {}
+
+
+def _peak_wheelchairs(data: dict) -> float | None:
+    wc = _wheelchair_depot(data)
+    value = wc.get("maxWheelchairsUsedAtSameTime", wc.get("wcMaxChairsInUse"))
+    return None if value is None else float(value)
+
+
+def _peak_wheelchair_share(data: dict) -> float | None:
+    wc = _wheelchair_depot(data)
+    value = wc.get("timeShareUsingMaxWheelchairs", wc.get("wcMaxUsageFraction"))
+    return None if value is None else float(value)
+
+
+def _depot_min_balance(data: dict, index: int) -> float | None:
+    balances = _wheelchair_depot(data).get("depotMinBalance") or []
+    if index >= len(balances):
+        return None
+    value = balances[index]
+    return None if value is None else float(value)
+
+
+def _mean_duration_active_seconds(data: dict) -> float | None:
+    value = _schedule_agg(data).get("meanDurationActiveSeconds")
+    return None if value is None else float(value)
+
+
+def _fleet_mean_seconds(data: dict, share_key: str) -> float | None:
+    sta = _schedule_agg(data)
+    mean_active = sta.get("meanDurationActiveSeconds")
+    share = sta.get(share_key)
+    if mean_active is None or share is None:
+        return None
+    return float(mean_active) * float(share)
+
+
+def _min_duration_active_seconds(data: dict) -> float | None:
+    value = _schedule_agg(data).get("minDurationActiveSeconds")
+    if value is None or int(value) < 0:
+        return None
+    return float(value)
+
+
+def load_metrics_documents(folder: Path, *, per_solution: bool, solution_filename: str | None) -> list[dict]:
+    if per_solution and solution_filename:
+        mp = folder / metrics_filename_for_solution(solution_filename)
+        if not mp.is_file():
+            return []
         try:
-            raw = mp.read_text(encoding="utf-8")
-            data = load_metrics_json_cached(raw)
+            return [load_metrics_json_cached(mp.read_text(encoding="utf-8"))]
+        except (json.JSONDecodeError, OSError):
+            return []
+    docs: list[dict] = []
+    for mp in list_metrics_files(folder):
+        try:
+            docs.append(load_metrics_json_cached(mp.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError):
             continue
-        rows.append(extract_comparison_metrics(data))
-    if not rows:
-        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
-    df = pd.DataFrame(rows)
-    return df.mean(numeric_only=True)
+    return docs
 
 
-def folder_metrics_for_solution_file(folder: Path, solution_filename: str) -> pd.Series:
-    mf = metrics_filename_for_solution(solution_filename)
-    mp = folder / mf
-    if not mp.is_file():
-        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
-    try:
-        data = load_metrics_json_cached(mp.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return pd.Series({k: np.nan for k, _ in COMPARISON_METRIC_LABELS}, dtype=float)
-    row = extract_comparison_metrics(data)
-    return pd.Series({k: (float(v) if v is not None else np.nan) for k, v in row.items()}, dtype=float)
+def aggregate_numeric(values: list[float | None]) -> float | None:
+    nums = [
+        float(v)
+        for v in values
+        if v is not None and not (isinstance(v, float) and np.isnan(v))
+    ]
+    if not nums:
+        return None
+    return float(np.mean(nums))
 
 
-def build_comparison_table(
+def aggregate_cell_values(
+    docs: list[dict],
+    extractor: Callable[[dict], float | None],
+) -> float | None:
+    if not docs:
+        return None
+    if len(docs) == 1:
+        return extractor(docs[0])
+    return aggregate_numeric([extractor(doc) for doc in docs])
+
+
+ComparisonRowSpec = tuple[str, str, Callable[[dict], float | None], Callable[[float | None], str]]
+
+
+def comparison_row_specs() -> list[ComparisonRowSpec]:
+    return [
+        ("section", "Main Metrics", lambda _d: None, lambda _v: ""),
+        (
+            "metric",
+            "Schedule Duration",
+            lambda d: _summary(d).get("scheduleDurationSeconds"),
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        ("subsection", "Objective Function", lambda _d: None, lambda _v: ""),
+        (
+            "metric",
+            "Value",
+            lambda d: _objective(d).get("value"),
+            lambda v: format_number(v),
+        ),
+        (
+            "metric",
+            "Tardiness Term",
+            lambda d: (_objective(d).get("tardinessTerm") or {}).get("value"),
+            lambda v: format_number(v),
+        ),
+        (
+            "metric",
+            "Depot Penalty Term",
+            lambda d: (_objective(d).get("depotPenaltyTerm") or {}).get("value"),
+            lambda v: format_number(v),
+        ),
+        ("section", "Patient Time Metrics", lambda _d: None, lambda _v: ""),
+        (
+            "metric",
+            "Tardiness (Mean)",
+            lambda d: (d.get("tardiness") or {}).get("meanUnweightedTardinessMinutesAllPatients"),
+            minutes_to_hms,
+        ),
+        (
+            "metric",
+            "Response Time (Mean)",
+            lambda d: (d.get("response") or {}).get("meanResponseMinutesAllPatients"),
+            minutes_to_hms,
+        ),
+        ("section", "Porter Time Metrics", lambda _d: None, lambda _v: ""),
+        (
+            "metric",
+            "Duration (Max)",
+            lambda d: _schedule_agg(d).get("maxDurationSeconds"),
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        (
+            "metric",
+            "Duration (Min)",
+            _min_duration_active_seconds,
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        (
+            "metric",
+            "Active (Mean)",
+            _mean_duration_active_seconds,
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        (
+            "metric",
+            "Travel (Mean)",
+            lambda d: _fleet_mean_seconds(d, "fleetTravelShare"),
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        (
+            "metric",
+            "Transport (Mean)",
+            lambda d: _fleet_mean_seconds(d, "fleetTransportShare"),
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        (
+            "metric",
+            "Idle (Mean)",
+            lambda d: _fleet_mean_seconds(d, "fleetIdleShare"),
+            lambda v: seconds_to_hms(v) if v is not None else "—",
+        ),
+        ("section", "Porter Effort Metrics", lambda _d: None, lambda _v: ""),
+        (
+            "metric",
+            "Beds (Mean)",
+            lambda d: _porter_effort(d).get("effortRateMean"),
+            format_percent,
+        ),
+        (
+            "metric",
+            "Beds (Max)",
+            lambda d: _porter_effort(d).get("maxBedShareAcrossPorters"),
+            format_percent,
+        ),
+        (
+            "metric",
+            "Beds (Min)",
+            lambda d: _porter_effort(d).get("minBedShareAcrossPorters"),
+            format_percent,
+        ),
+        ("section", "Depot inventory", lambda _d: None, lambda _v: ""),
+        (
+            "metric",
+            "Peak wheelchair demand",
+            _peak_wheelchairs,
+            lambda v: format_number(v),
+        ),
+        (
+            "metric",
+            "Time at peak demand (share of horizon)",
+            _peak_wheelchair_share,
+            format_percent,
+        ),
+        (
+            "metric",
+            "Min Balance Depot 1",
+            lambda d: _depot_min_balance(d, 0),
+            lambda v: format_number(v, decimals=2),
+        ),
+        (
+            "metric",
+            "Min Balance Depot 2",
+            lambda d: _depot_min_balance(d, 1),
+            lambda v: format_number(v, decimals=2),
+        ),
+        (
+            "metric",
+            "Min Balance Depot 3",
+            lambda d: _depot_min_balance(d, 2),
+            lambda v: format_number(v, decimals=2),
+        ),
+        (
+            "metric",
+            "Time spent Walking to Depot (mean)",
+            lambda d: _wheelchair_depot(d).get("avgWalkingToDepotMinutes"),
+            format_minutes,
+        ),
+    ]
+
+
+def build_comparison_display_table(
     folder_names: list[str],
     *,
     per_solution: bool,
     solution_filename: str | None,
-) -> pd.DataFrame:
-    """Rows = metrics, columns = folder names."""
-    index = [label for _, label in COMPARISON_METRIC_LABELS]
-    keys = [k for k, _ in COMPARISON_METRIC_LABELS]
-    cols: dict[str, list[float]] = {}
-    for name in folder_names:
-        fp = OUTPUT_ROOT / name
-        if per_solution and solution_filename:
-            s = folder_metrics_for_solution_file(fp, solution_filename)
-        else:
-            s = folder_metrics_mean_series(fp)
-        cols[name] = [float(s.get(k, np.nan)) for k in keys]
-    return pd.DataFrame(cols, index=index)
+) -> tuple[pd.DataFrame, set[int]]:
+    specs = comparison_row_specs()
+    bold_rows: set[int] = set()
+    table_rows: list[list[str]] = []
+
+    for kind, label, extractor, formatter in specs:
+        row_idx = len(table_rows)
+        if kind in {"section", "subsection"}:
+            bold_rows.add(row_idx)
+            table_rows.append([label] + [""] * len(folder_names))
+            continue
+
+        row = [label]
+        for folder_name in folder_names:
+            docs = load_metrics_documents(
+                OUTPUT_ROOT / folder_name,
+                per_solution=per_solution,
+                solution_filename=solution_filename,
+            )
+            if not docs:
+                row.append("—")
+                continue
+            if per_solution:
+                doc = docs[0]
+                sta = _schedule_agg(doc)
+                if label == "Duration (Max)":
+                    cell = sta.get("maxDurationClock") or seconds_to_hms(sta.get("maxDurationSeconds"))
+                elif label == "Duration (Min)":
+                    cell = sta.get("minDurationActiveClock") or seconds_to_hms(_min_duration_active_seconds(doc))
+                else:
+                    cell = formatter(extractor(doc))
+            else:
+                cell = formatter(aggregate_cell_values(docs, extractor))
+            row.append(cell if cell not in (None, "") else "—")
+        table_rows.append(row)
+
+    columns = ["Metric"] + folder_names
+    return pd.DataFrame(table_rows, columns=columns), bold_rows
+
+
+def style_comparison_table(df: pd.DataFrame, bold_rows: set[int]):
+    def _row_style(row: pd.Series):
+        if row.name in bold_rows:
+            return ["font-weight: bold"] * len(row)
+        return [""] * len(row)
+
+    return df.style.apply(_row_style, axis=1)
 
 
 def all_schedule_row_labels(final_schedules: list) -> list[str]:
@@ -475,14 +717,19 @@ def main() -> None:
         else:
             st.caption(
                 "Columns = folders selected for comparison. Each cell = **mean** over all "
-                "`*_metrics.json` in that folder (aggregate of all solution runs in the folder)."
+                "`*_metrics.json` in that folder. Rows include all numeric **summary** fields "
+                "(objective function, tardiness by priority, depot penalty) plus schedule/tardiness aggregates."
             )
-        cmp_df = build_comparison_table(
+        cmp_df, bold_rows = build_comparison_display_table(
             compare_folders,
             per_solution=per_solution_table,
             solution_filename=chosen_file if per_solution_table else None,
         )
-        st.dataframe(cmp_df.round(4), use_container_width=True)
+        st.dataframe(
+            style_comparison_table(cmp_df, bold_rows),
+            use_container_width=False,
+            hide_index=True,
+        )
     else:
         st.info("Pick at least one folder under **Comparison** in the sidebar to show the metrics table.")
 

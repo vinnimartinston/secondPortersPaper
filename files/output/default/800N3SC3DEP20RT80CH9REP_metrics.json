@@ -2,13 +2,43 @@
   "instanceName" : "800N3SC3DEP20RT80CH9REP.txt",
   "amountOfPorters" : 16,
   "transportedPatientCount" : 800,
-  "simulatorWallTimeSeconds" : 63.184673792,
+  "simulatorWallTimeSeconds" : 129.009716167,
   "summary" : {
-    "makespanSeconds" : 59355,
-    "makespanClock" : "16:29:15",
-    "sumWeightedTardiness" : 486434.0,
-    "sumUnweightedTardinessSeconds" : 100072.0,
-    "objectiveValueFromSolution" : 162
+    "scheduleDurationSeconds" : 30555,
+    "scheduleDurationClock" : "08:29:15",
+    "objectiveFunction" : {
+      "value" : 486434,
+      "tardinessTerm" : {
+        "value" : 486434.0,
+        "sumUnweightedTardinessSeconds" : 100072.0,
+        "byPriority" : [ {
+          "priority" : 1,
+          "value" : 83966.0,
+          "coefficient" : 1,
+          "sumUnweightedTardinessSeconds" : 83966.0
+        }, {
+          "priority" : 2,
+          "value" : 33150.0,
+          "coefficient" : 10,
+          "sumUnweightedTardinessSeconds" : 3315.0
+        }, {
+          "priority" : 3,
+          "value" : 21618.0,
+          "coefficient" : 18,
+          "sumUnweightedTardinessSeconds" : 1201.0
+        }, {
+          "priority" : 4,
+          "value" : 347700.0,
+          "coefficient" : 30,
+          "sumUnweightedTardinessSeconds" : 11590.0
+        } ]
+      },
+      "depotPenaltyTerm" : {
+        "value" : 0,
+        "coefficient" : 100000,
+        "totalWheelchairViolationSecondsBelowZero" : 0
+      }
+    }
   },
   "tardiness" : {
     "countTardinessZero" : 595,
@@ -17,24 +47,28 @@
     "byPriority" : [ {
       "priority" : 1,
       "patientCount" : 175,
+      "sumUnweightedTardinessMinutes" : 1399.4333333333334,
       "avgUnweightedTardinessMinutes" : 7.996761904761905,
       "tardyPatientCount" : 73,
       "tardyPatientShare" : 0.41714285714285715
     }, {
       "priority" : 2,
       "patientCount" : 175,
+      "sumUnweightedTardinessMinutes" : 55.25,
       "avgUnweightedTardinessMinutes" : 0.3157142857142857,
       "tardyPatientCount" : 18,
       "tardyPatientShare" : 0.10285714285714286
     }, {
       "priority" : 3,
       "patientCount" : 175,
+      "sumUnweightedTardinessMinutes" : 20.016666666666666,
       "avgUnweightedTardinessMinutes" : 0.11438095238095237,
       "tardyPatientCount" : 6,
       "tardyPatientShare" : 0.03428571428571429
     }, {
       "priority" : 4,
       "patientCount" : 275,
+      "sumUnweightedTardinessMinutes" : 193.16666666666666,
       "avgUnweightedTardinessMinutes" : 0.7024242424242424,
       "tardyPatientCount" : 108,
       "tardyPatientShare" : 0.3927272727272727
@@ -158,13 +192,12 @@
     } ]
   },
   "wheelchairDepot" : {
-    "note" : "WC_indicator / depot timeline (printer.cpp ~682–866) not replicated in Java; numeric fields below are placeholders.",
-    "wcMaxChairsInUse" : 0,
-    "wcMaxUsageFraction" : 0.0,
-    "depotMinBalancePlaceholder" : [ ],
-    "totalPickUp" : 0.0,
-    "totalDropOff" : 0.0,
-    "avgWalkingToDepotMinutes" : 0.0
+    "maxWheelchairsUsedAtSameTime" : 19,
+    "timeShareUsingMaxWheelchairs" : 0.04125633894977916,
+    "depotMinBalance" : [ 19.0, 2.0, 0.0 ],
+    "totalPickUp" : 30.0,
+    "totalDropOff" : 35.0,
+    "avgWalkingToDepotMinutes" : 6.850769230769231
   },
   "scheduleTimeAggregates" : {
     "sumTravel" : {

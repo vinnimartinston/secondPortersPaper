@@ -9,7 +9,7 @@
     "depotInventoryViolationPenaltyCoefficient" : 100000,
     "totalWheelchairViolationSecondsBelowZero" : 1,
     "depotPenaltyTerm" : 100000,
-    "unweightedTardinessSumSeconds" : 0
+    "sumWeightedTardiness" : 0
   },
   "finalSchedules" : [ {
     "porterId" : 0,

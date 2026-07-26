@@ -33,7 +33,7 @@ public class ExperimentRunnerConfig {
      * Parallelism for {@link java.util.concurrent.ForkJoinPool}. If {@code null} or
      * non-positive, {@link Runtime#availableProcessors()} is used.
      */
-    public static Integer parallelism = 1;
+    public static Integer parallelism = 3;
 
     public static Integer getParallelism() {
         return parallelism;

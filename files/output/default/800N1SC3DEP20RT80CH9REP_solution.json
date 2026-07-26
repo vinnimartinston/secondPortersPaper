@@ -4,20 +4,20 @@
     "profile" : 1,
     "amountOfDepots" : 3,
     "roundTripsPercentage" : 20,
-    "wheelchairChangesPercentage" : 80,
+    "wheelchairPercentage" : 80,
     "instanceName" : "800N1SC3DEP20RT80CH9REP"
   },
   "simulatorClock" : "16:30:12",
   "objectiveFunction" : {
-    "objectiveValue" : 0,
+    "objectiveValue" : 149082554,
     "evaluationWindowStartSeconds" : 28800,
     "evaluationWindowStartClock" : "08:00:00",
     "evaluationWindowEndExclusiveSeconds" : 59413,
     "evaluationHorizonLastIncludedSecondClock" : "16:30:12",
     "depotInventoryViolationPenaltyCoefficient" : 100000,
-    "totalWheelchairViolationSecondsBelowZero" : 0,
-    "depotPenaltyTerm" : 0,
-    "unweightedTardinessSumSeconds" : 0
+    "totalWheelchairViolationSecondsBelowZero" : 1486,
+    "depotPenaltyTerm" : 148600000,
+    "sumWeightedTardiness" : 482554
   },
   "finalSchedules" : [ {
     "porterId" : 0,
@@ -22028,7 +22028,7 @@
         "destination" : 18
       },
       "initialWheelchairInventory" : 9,
-      "wheelchairViolationSecondsBelowZero" : 0,
+      "wheelchairViolationSecondsBelowZero" : 847,
       "finalTimelineSummary" : {
         "windowStartSeconds" : 28800,
         "windowStartClock" : "08:00:00",
@@ -22528,7 +22528,7 @@
         "destination" : 23
       },
       "initialWheelchairInventory" : 8,
-      "wheelchairViolationSecondsBelowZero" : 0,
+      "wheelchairViolationSecondsBelowZero" : 639,
       "finalTimelineSummary" : {
         "windowStartSeconds" : 28800,
         "windowStartClock" : "08:00:00",

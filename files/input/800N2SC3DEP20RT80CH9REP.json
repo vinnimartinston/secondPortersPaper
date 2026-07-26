@@ -5,7 +5,7 @@
     "profile": 2,
     "amountOfDepots": 3,
     "roundTripsPercentage": 20,
-    "wheelchairChangesPercentage": 80,
+    "wheelchairPercentage": 80,
     "instanceName": "800N2SC3DEP20RT80CH9REP"
   },
   "amountOfPorters": 16,

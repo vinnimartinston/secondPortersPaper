@@ -26,9 +26,14 @@ import com.paper2.dto.metrics.ExperimentMetricsDto.ResponseByPriority;
 import com.paper2.dto.metrics.ExperimentMetricsDto.ScheduleTimeAggregates;
 import com.paper2.dto.metrics.ExperimentMetricsDto.SetupIdle;
 import com.paper2.dto.metrics.ExperimentMetricsDto.Summary;
+import com.paper2.dto.metrics.ExperimentMetricsDto.DepotPenaltyTerm;
+import com.paper2.dto.metrics.ExperimentMetricsDto.SummaryObjectiveFunction;
+import com.paper2.dto.metrics.ExperimentMetricsDto.TardinessTerm;
+import com.paper2.dto.metrics.ExperimentMetricsDto.TardinessTermByPriority;
 import com.paper2.dto.metrics.ExperimentMetricsDto.TimeSecondsAndClock;
 import com.paper2.dto.metrics.ExperimentMetricsDto.Tardiness;
 import com.paper2.dto.metrics.ExperimentMetricsDto.WheelchairDepot;
+import com.paper2.metrics.FinalScheduleObjectiveTerms;
 import com.paper2.metrics.inventory.DepotSelectionByObjective;
 
 /**
@@ -59,7 +64,7 @@ public final class SolutionMetricsCalculator {
         }
         if (solution == null || solution.getFinalSchedules() == null) {
             dto.setTransportedPatientCount(0);
-            dto.setSummary(new Summary(0, "00:00:00", 0, 0, 0));
+            dto.setSummary(emptySummary());
             dto.setTardiness(new Tardiness(0, 0, 0, new ArrayList<>(), 0));
             dto.setResponse(new Response(new ArrayList<>(), 0));
             dto.setSetupIdle(new SetupIdle(0, 0, 0, "00:00:00", 0, 0, 0, null));
@@ -106,6 +111,8 @@ public final class SolutionMetricsCalculator {
             Agg a = byPri.computeIfAbsent(pri, k -> new Agg());
             a.patientCount++;
             a.sumTardUnweighted += lateSec;
+            a.sumTardWeighted += (double) lateSec * w;
+            a.coefficient = w;
             if (lateSec > 0) {
                 a.tardyPatientCount++;
             }
@@ -137,13 +144,16 @@ public final class SolutionMetricsCalculator {
         double horizonMin = horizon / 60.0;
         double idleShare = horizonMin > 0 ? avgIdleMinPerPorter / horizonMin : 0;
 
+        FinalScheduleObjectiveTerms.Result objectiveTerms = FinalScheduleObjectiveTerms.compute(solution);
+
         Summary summary =
-                new Summary(
+                buildSummary(
                         makespanSec,
-                        ScheduleTimeFormat.clockOrZero(new TimeObject(makespanSec)),
                         sumWeightedTard,
                         sumUnweightedTard,
-                        solution.getObjectiveValue());
+                        objectiveTerms,
+                        solution.getDepotInventoryViolationPenaltyCoefficient(),
+                        byPri);
 
         List<PriorityBreakdown> tardPri = new ArrayList<>();
         List<ResponseByPriority> respPri = new ArrayList<>();
@@ -159,15 +169,16 @@ public final class SolutionMetricsCalculator {
         priKeys.sort(Integer::compareTo);
         for (Integer pri : priKeys) {
             Agg a = byPri.get(pri);
+            double sumTardMin = a.sumTardUnweighted / 60.0;
             double avgTardMin =
-                    a.patientCount > 0 ? a.sumTardUnweighted / 60.0 / a.patientCount : 0;
+                    a.patientCount > 0 ? sumTardMin / a.patientCount : 0;
             double share =
                     a.patientCount > 0 ? a.tardyPatientCount / (double) a.patientCount : 0;
             double avgRespMin =
                     a.patientCount > 0 ? a.sumResponseSec / 60.0 / a.patientCount : 0;
             tardPri.add(
                     new PriorityBreakdown(
-                            pri, a.patientCount, avgTardMin, a.tardyPatientCount, share));
+                            pri, a.patientCount, sumTardMin, avgTardMin, a.tardyPatientCount, share));
             respPri.add(new ResponseByPriority(pri, a.patientCount, avgRespMin));
         }
 
@@ -193,9 +204,54 @@ public final class SolutionMetricsCalculator {
         dto.setResponse(response);
         dto.setSetupIdle(setupIdle);
         dto.setPorterEffort(pe);
-        dto.setWheelchairDepot(new WheelchairDepot());
+        dto.setWheelchairDepot(WheelchairDepotMetricsCalculator.compute(solution));
         dto.setScheduleTimeAggregates(buildScheduleTimeAggregates(solution));
         return dto;
+    }
+
+    private static Summary buildSummary(
+            int makespanSeconds,
+            double sumWeightedTardiness,
+            double sumUnweightedTardinessSeconds,
+            FinalScheduleObjectiveTerms.Result objectiveTerms,
+            int depotPenaltyCoefficient,
+            Map<Integer, Agg> byPri) {
+        List<TardinessTermByPriority> tardinessByPriority = new ArrayList<>();
+        List<Integer> priKeys = new ArrayList<>(byPri.keySet());
+        priKeys.sort(Integer::compareTo);
+        for (Integer pri : priKeys) {
+            Agg a = byPri.get(pri);
+            tardinessByPriority.add(
+                    new TardinessTermByPriority(
+                            pri, a.sumTardWeighted, a.coefficient, a.sumTardUnweighted));
+        }
+
+        TardinessTerm tardinessTerm =
+                new TardinessTerm(sumWeightedTardiness, sumUnweightedTardinessSeconds, tardinessByPriority);
+        DepotPenaltyTerm depotPenaltyTerm =
+                new DepotPenaltyTerm(
+                        objectiveTerms.depotPenaltyTerm(),
+                        depotPenaltyCoefficient,
+                        objectiveTerms.totalWheelchairViolationSecondsBelowZero());
+        SummaryObjectiveFunction objectiveFunction =
+                new SummaryObjectiveFunction(
+                        FinalScheduleObjectiveTerms.clampObjectiveToInt(objectiveTerms.objectiveValue()),
+                        tardinessTerm,
+                        depotPenaltyTerm);
+        int scheduleDurationSeconds =
+                Math.max(0, makespanSeconds - DomainConstants.SCHEDULE_START_TIME_SECONDS);
+        String scheduleDurationClock = ScheduleTimeFormat.durationHms(scheduleDurationSeconds);
+        return new Summary(scheduleDurationSeconds, scheduleDurationClock, objectiveFunction);
+    }
+
+    private static Summary emptySummary() {
+        return new Summary(
+                0,
+                "00:00:00",
+                new SummaryObjectiveFunction(
+                        0,
+                        new TardinessTerm(0, 0, new ArrayList<>()),
+                        new DepotPenaltyTerm(0, 0, 0)));
     }
 
     private static ScheduleTimeAggregates emptyScheduleTimeAggregates() {
@@ -470,6 +526,8 @@ public final class SolutionMetricsCalculator {
     private static final class Agg {
         int patientCount;
         double sumTardUnweighted;
+        double sumTardWeighted;
+        int coefficient;
         int tardyPatientCount;
         double sumResponseSec;
     }

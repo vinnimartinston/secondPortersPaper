@@ -75,7 +75,7 @@ public final class InputMapper {
                 dto.getProfile(),
                 dto.getAmountOfDepots(),
                 dto.getRoundTripsPercentage(),
-                dto.getWheelchairChangesPercentage(),
+                dto.getWheelchairPercentage(),
                 dto.getInstanceName());
     }
 

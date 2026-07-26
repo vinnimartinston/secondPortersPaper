@@ -52,4 +52,23 @@ public final class ScheduleTimeFormat {
         }
         return "-" + durationHmsUnsignedLong(-totalSeconds);
     }
+
+    /**
+     * Parses {@code HH:MM:SS} or {@code H:MM:SS} (clock since midnight or duration) into seconds.
+     *
+     * @throws IllegalArgumentException if {@code clockOrDuration} is not three colon-separated integer fields
+     */
+    public static int parseHms(String clockOrDuration) {
+        if (clockOrDuration == null || clockOrDuration.isBlank()) {
+            return 0;
+        }
+        String[] parts = clockOrDuration.trim().split(":");
+        if (parts.length != 3) {
+            throw new IllegalArgumentException("Expected HH:MM:SS, got: " + clockOrDuration);
+        }
+        int hours = Integer.parseInt(parts[0]);
+        int minutes = Integer.parseInt(parts[1]);
+        int seconds = Integer.parseInt(parts[2]);
+        return hours * 3600 + minutes * 60 + seconds;
+    }
 }
