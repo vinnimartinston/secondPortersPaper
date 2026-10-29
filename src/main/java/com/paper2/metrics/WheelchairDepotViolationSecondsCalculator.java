@@ -21,7 +21,7 @@ import com.paper2.metrics.inventory.WheelchairDepotEdgeRules.WheelchairDepotBala
 /**
  * Soft inventory model: measures how many seconds in the evaluation horizon have strictly negative wheelchair
  * stock at each depot. Uses committed final-schedule timeline plus working-route events from the current
- * schedules (or trial overrides). The horizon is walked in one-second steps.
+ * schedules (or trial overrides). Seconds below zero are counted by jumping from one balance change to the next.
  */
 public final class WheelchairDepotViolationSecondsCalculator {
 
@@ -75,6 +75,61 @@ public final class WheelchairDepotViolationSecondsCalculator {
             List<List<Patient>> chainOverrideByScheduleIndex,
             WheelchairDepotEdgeRules.DepotPerLeg legDepot) {
         return computeViolationSweep(solution, chainOverrideByScheduleIndex, legDepot).totalSeconds();
+    }
+
+    /**
+     * Per-depot violation seconds for one already chosen {@code legDepot}. Does not build another depot plan.
+     */
+    public static Map<Integer, Long> violationSecondsByDepot(
+            Solution solution,
+            List<List<Patient>> chainOverrideByScheduleIndex,
+            WheelchairDepotEdgeRules.DepotPerLeg legDepot) {
+        return new LinkedHashMap<>(
+                computeViolationSweep(solution, chainOverrideByScheduleIndex, legDepot).secondsByDepotId());
+    }
+
+    /**
+     * Violation seconds on {@code depotId} with {@code legDepot} applied, and the balance on that depot after every
+     * delta at {@code arrivalSecond} (the same instant the per-second counter would see).
+     */
+    public record DepotVisitScore(
+            long violationSeconds, long balanceAfterArrival, long violationWithoutThisVisit) {}
+
+    public static DepotVisitScore scoreDepotVisit(
+            Solution solution,
+            List<List<Patient>> chainOverrideByScheduleIndex,
+            WheelchairDepotEdgeRules.DepotPerLeg legDepot,
+            int depotId,
+            int arrivalSecond,
+            int wheelchairDelta) {
+        if (solution == null || solution.getDepots() == null || solution.getDepots().isEmpty()) {
+            return new DepotVisitScore(0L, 0L, 0L);
+        }
+        int windowStart = evaluationWindowStartSeconds(solution);
+        int windowEndExclusive =
+                capWindowEnd(
+                        windowStart,
+                        evaluationWindowEndExclusiveSeconds(solution, chainOverrideByScheduleIndex));
+        if (solution.getGraph() == null || windowEndExclusive <= windowStart) {
+            return new DepotVisitScore(0L, 0L, 0L);
+        }
+        Map<Integer, List<WheelchairDepotBalanceChange>> allByDepot =
+                collectAllWorkingChangesByDepot(solution, chainOverrideByScheduleIndex, legDepot);
+        long initial =
+                computeInitialBalanceBeforeWindowStart(
+                        solution, solution.getInventoryState(), depotId, windowStart, allByDepot);
+        List<WheelchairDepotBalanceChange> inWindow =
+                filterChangesInWindow(
+                        allByDepot.getOrDefault(depotId, List.of()), windowStart, windowEndExclusive);
+        long violation = violationSecondsForDepot(initial, inWindow, windowStart, windowEndExclusive);
+        long balance = balanceAfterSecond(initial, inWindow, arrivalSecond);
+        long violationWithoutThisVisit =
+                violationSecondsForDepot(
+                        initial,
+                        withoutOneDelta(inWindow, arrivalSecond, wheelchairDelta),
+                        windowStart,
+                        windowEndExclusive);
+        return new DepotVisitScore(violation, balance, violationWithoutThisVisit);
     }
 
     /**
@@ -276,23 +331,68 @@ public final class WheelchairDepotViolationSecondsCalculator {
         return schedule == null ? List.of() : schedule.orderedPatientsFromStart();
     }
 
-    private static long violationSecondsForDepot(
+    /**
+     * Seconds in {@code [windowStart, windowEndExclusive)} with balance strictly below zero.
+     * Balance is piecewise constant: the delta at second {@code t} applies to {@code t} and every later second
+     * until the next delta, matching a per-second walk.
+     */
+    static long violationSecondsForDepot(
             long balanceBeforeFirstWindowSecond,
             List<WheelchairDepotBalanceChange> inWindowChanges,
             int windowStart,
             int windowEndExclusive) {
-        Map<Integer, Integer> netChangeAtSecond = new HashMap<>();
-        for (WheelchairDepotBalanceChange c : inWindowChanges) {
-            netChangeAtSecond.merge(c.timeSeconds(), c.wheelchairDelta(), Integer::sum);
+        if (windowEndExclusive <= windowStart) {
+            return 0L;
         }
-        long balance = balanceBeforeFirstWindowSecond;
-        long violationSeconds = 0;
-        for (int t = windowStart; t < windowEndExclusive; t++) {
-            balance += netChangeAtSecond.getOrDefault(t, 0);
-            if (balance < 0) {
-                violationSeconds++;
+        Map<Integer, Integer> netChangeAtSecond = new HashMap<>();
+        for (WheelchairDepotBalanceChange change : inWindowChanges) {
+            int timeSeconds = change.timeSeconds();
+            if (timeSeconds >= windowStart && timeSeconds < windowEndExclusive) {
+                netChangeAtSecond.merge(timeSeconds, change.wheelchairDelta(), Integer::sum);
             }
         }
+        int[] eventTimes = netChangeAtSecond.keySet().stream().mapToInt(Integer::intValue).sorted().toArray();
+        long balance = balanceBeforeFirstWindowSecond;
+        long violationSeconds = 0L;
+        int cursor = windowStart;
+        for (int eventTime : eventTimes) {
+            if (balance < 0) {
+                violationSeconds += (long) eventTime - cursor;
+            }
+            balance += netChangeAtSecond.get(eventTime);
+            cursor = eventTime;
+        }
+        if (balance < 0) {
+            violationSeconds += (long) windowEndExclusive - cursor;
+        }
         return violationSeconds;
+    }
+
+    static long balanceAfterSecond(
+            long balanceBeforeWindow, List<WheelchairDepotBalanceChange> inWindowChanges, int atSecond) {
+        long balance = balanceBeforeWindow;
+        for (WheelchairDepotBalanceChange change : inWindowChanges) {
+            if (change.timeSeconds() <= atSecond) {
+                balance += change.wheelchairDelta();
+            }
+        }
+        return balance;
+    }
+
+    private static List<WheelchairDepotBalanceChange> withoutOneDelta(
+            List<WheelchairDepotBalanceChange> changes, int second, int delta) {
+        List<WheelchairDepotBalanceChange> without = new ArrayList<>();
+        boolean removed = false;
+        for (WheelchairDepotBalanceChange change : changes) {
+            if (!removed && change.timeSeconds() == second && change.wheelchairDelta() == delta) {
+                removed = true;
+                continue;
+            }
+            without.add(change);
+        }
+        if (!removed && second >= 0) {
+            without.add(new WheelchairDepotBalanceChange(second, -delta));
+        }
+        return without;
     }
 }

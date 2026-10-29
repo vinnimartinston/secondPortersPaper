@@ -188,15 +188,17 @@ public final class WheelchairDepotEdgeRules {
             if (!porter.shouldGoToDepot(previousPolicy, currentPolicy)) {
                 continue;
             }
-            Depot depot =
-                    legDepot != null
-                            ? legDepot.depot(scheduleIndex, index, previous, current)
-                            : selectDepotForLegMinTravel(previous, depots, graph);
-            if (depot == null) {
+            Depot depot;
+            if (legDepot != null) {
+                depot = legDepot.depot(scheduleIndex, index, previous, current);
+                if (depot == null) {
+                    continue;
+                }
+            } else {
                 depot = selectDepotForLegMinTravel(previous, depots, graph);
-            }
-            if (depot == null) {
-                continue;
+                if (depot == null) {
+                    continue;
+                }
             }
             int arrivalSeconds = arrivalSecondsAtDepot(previous, depot, graph);
             if (arrivalSeconds < 0) {

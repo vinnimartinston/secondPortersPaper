@@ -16,13 +16,18 @@ import com.paper2.domain.Solution;
 import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
 
 /**
- * Chooses which depot is used on each route leg so as to minimize total seconds of negative wheelchair stock across
- * depots (the inventory term multiplied by {@link com.paper2.domain.Solution#getDepotInventoryViolationPenaltyCoefficient()}
- * in the combined objective). Legs with non-zero balance delta are decided in ascending order of arrival time at the
- * minimum-travel depot; earlier choices are fixed when scoring later legs.
+ * Chooses which depot is used on each route leg so wheelchair stock does not go negative.
  * <p>
- * Use {@link #buildPlan(Solution, List)} to obtain a {@link DepotLegPlan}, then {@link #resolver(DepotLegPlan, List, Graph)}
- * for {@link WheelchairDepotEdgeRules.DepotPerLeg} passed to violation and balance-change aggregation.
+ * For every origin-destination pair of locations, depots are ranked once by detour length
+ * (travel into the depot plus travel out to the destination; ties: lower depot id). Legs are still decided in
+ * arrival order, with earlier choices fixed. Each leg tries that ranked list and keeps the first depot that still
+ * has stock at the arrival second and does not add violation seconds. Later depots are scored only when the nearer
+ * one fails that check. If every depot fails, the leg keeps the one with the fewest violation seconds. Unfixed later
+ * legs are omitted from each trial.
+ * <p>
+ * Use {@link #buildPlan(Solution, List)} to obtain a {@link DepotLegPlan}, then
+ * {@link #resolver(DepotLegPlan, List, Graph)} for {@link WheelchairDepotEdgeRules.DepotPerLeg}
+ * passed to violation and balance-change aggregation.
  */
 public final class DepotSelectionByObjective {
 
@@ -99,42 +104,110 @@ public final class DepotSelectionByObjective {
                         .thenComparingInt(LegWork::scheduleIndex)
                         .thenComparingInt(LegWork::legIndex));
 
-        for (LegWork w : toDecide) {
+        Map<Long, List<Depot>> depotsByOriginDestination = new HashMap<>();
+        for (LegWork leg : toDecide) {
             Depot best = null;
-            long bestViol = Long.MAX_VALUE;
-            for (Depot d : depots) {
-                if (d == null || d.getLocation() == null) {
-                    continue;
-                }
-                Depot candidate = d;
+            long bestViolation = Long.MAX_VALUE;
+            int wheelchairDelta =
+                    WheelchairDepotEdgeRules.netWheelchairDeltaAtDepotVisit(leg.previous, leg.current);
+            for (Depot candidate : depotsForLeg(depotsByOriginDestination, graph, depots, leg)) {
+                int arrivalSeconds =
+                        WheelchairDepotEdgeRules.arrivalSecondsAtDepot(leg.previous, candidate, graph);
                 WheelchairDepotEdgeRules.DepotPerLeg trial =
-                        (sid, leg, prev, cur) -> {
-                            if (sid == w.scheduleIndex && leg == w.legIndex) {
+                        (scheduleIndex, legIndex, previous, current) -> {
+                            if (scheduleIndex == leg.scheduleIndex && legIndex == leg.legIndex) {
                                 return candidate;
                             }
-                            Integer fixedId = chosenId.get(key(sid, leg));
+                            Integer fixedId = chosenId.get(key(scheduleIndex, legIndex));
                             if (fixedId != null) {
                                 return findDepotById(depots, fixedId);
                             }
-                            return WheelchairDepotEdgeRules.selectDepotForLegMinTravel(prev, depots, graph);
+                            return null;
                         };
-                long v =
-                        WheelchairDepotViolationSecondsCalculator.totalViolationSecondsAcrossDepots(
-                                solution, chainOverrideByScheduleIndex, trial);
-                if (v < bestViol || (v == bestViol && (best == null || d.getId() < best.getId()))) {
-                    bestViol = v;
-                    best = d;
+                WheelchairDepotViolationSecondsCalculator.DepotVisitScore score =
+                        WheelchairDepotViolationSecondsCalculator.scoreDepotVisit(
+                                solution,
+                                chainOverrideByScheduleIndex,
+                                trial,
+                                candidate.getId(),
+                                arrivalSeconds,
+                                wheelchairDelta);
+                if (score.violationSeconds() < bestViolation) {
+                    bestViolation = score.violationSeconds();
+                    best = candidate;
+                }
+                long addedViolation = score.violationSeconds() - score.violationWithoutThisVisit();
+                if (score.balanceAfterArrival() >= 0 && addedViolation <= 0) {
+                    best = candidate;
+                    break;
                 }
             }
             Depot resolved =
                     best != null
                             ? best
-                            : WheelchairDepotEdgeRules.selectDepotForLegMinTravel(w.previous, depots, graph);
+                            : WheelchairDepotEdgeRules.selectDepotForLegMinTravel(leg.previous, depots, graph);
             if (resolved != null) {
-                chosenId.put(key(w.scheduleIndex, w.legIndex), resolved.getId());
+                chosenId.put(key(leg.scheduleIndex, leg.legIndex), resolved.getId());
             }
         }
         return new DepotLegPlan(Collections.unmodifiableMap(new HashMap<>(chosenId)));
+    }
+
+    /**
+     * Depots for this leg's origin-destination pair, nearest detour first. The order is cached for the plan.
+     */
+    private static List<Depot> depotsForLeg(
+            Map<Long, List<Depot>> depotsByOriginDestination, Graph graph, List<Depot> depots, LegWork leg) {
+        List<Depot> usable = usableDepots(depots);
+        if (leg.previous.getLocation() == null || leg.current.getLocation() == null || graph.getGraph() == null) {
+            return usable;
+        }
+        int origin = leg.previous.getLocation().getDestination();
+        int destination = leg.current.getLocation().getOrigin();
+        long pair = pairKey(origin, destination);
+        List<Depot> ranked = depotsByOriginDestination.get(pair);
+        if (ranked != null) {
+            return ranked;
+        }
+        List<List<Integer>> matrix = graph.getGraph();
+        List<Depot> order = new ArrayList<>(usable);
+        order.sort(
+                Comparator.comparingInt((Depot depot) -> detourSeconds(matrix, origin, destination, depot))
+                        .thenComparingInt(Depot::getId));
+        List<Depot> frozen = List.copyOf(order);
+        depotsByOriginDestination.put(pair, frozen);
+        return frozen;
+    }
+
+    private static List<Depot> usableDepots(List<Depot> depots) {
+        List<Depot> usable = new ArrayList<>();
+        for (Depot depot : depots) {
+            if (depot != null && depot.getLocation() != null) {
+                usable.add(depot);
+            }
+        }
+        return usable;
+    }
+
+    private static int detourSeconds(List<List<Integer>> matrix, int origin, int destination, Depot depot) {
+        int depotOrigin = depot.getLocation().getOrigin();
+        int depotDestination = depot.getLocation().getDestination();
+        if (origin < 0
+                || destination < 0
+                || origin >= matrix.size()
+                || destination >= matrix.size()
+                || depotOrigin < 0
+                || depotOrigin >= matrix.get(origin).size()
+                || depotDestination < 0
+                || depotDestination >= matrix.size()
+                || destination >= matrix.get(depotDestination).size()) {
+            return Integer.MAX_VALUE;
+        }
+        return matrix.get(origin).get(depotOrigin) + matrix.get(depotDestination).get(destination);
+    }
+
+    private static long pairKey(int origin, int destination) {
+        return (((long) origin) << 32) | (destination & 0xffffffffL);
     }
 
     /** Resolves the depot for one leg from a plan, falling back to minimum travel when the plan has no entry. */

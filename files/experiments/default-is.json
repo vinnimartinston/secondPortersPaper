@@ -1,0 +1,19 @@
+{
+  "penalty": 100000,
+  "localSearch": false,
+  "overWriteInitialWheelchairInventory": false,
+  "depots":[
+    {
+      "id": 1,
+      "initialWheelchairInventory": 50
+    },
+    {
+      "id": 2,
+      "initialWheelchairInventory": 50
+    },
+    {
+      "id": 3,
+      "initialWheelchairInventory": 50
+    }
+  ]
+}

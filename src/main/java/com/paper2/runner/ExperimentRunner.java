@@ -162,11 +162,12 @@ public class ExperimentRunner {
                 Files.createDirectories(outputDir);
 
                 System.out.printf(
-                        "Experiment %s | %d instance(s) | parallelism=%d | penalty=%d | out=%s%n",
+                        "Experiment %s | %d instance(s) | parallelism=%d | penalty=%d | localSearch=%s | out=%s%n",
                         experimentConfig.experimentName,
                         jsonFiles.size(),
                         parallelism,
                         penaltyCoefficient,
+                        experimentConfig.localSearchEnabled,
                         outputDir.toAbsolutePath());
 
                 final int experimentIndexZeroBased = experimentOrdinal++;
@@ -216,7 +217,7 @@ public class ExperimentRunner {
                     experimentConfig.overwriteInitialWheelchairInventory(),
                     experimentConfig.initialWheelchairInventoryByDepotId());
             long t0 = System.nanoTime();
-            SimulationRunResult run = simulator.start(input);
+            SimulationRunResult run = simulator.start(input, experimentConfig.localSearchEnabled);
             double wallSeconds = (System.nanoTime() - t0) / 1_000_000_000.0;
             String stem = baseName(inputPath);
             if (run.getSolution() != null) {
@@ -392,12 +393,14 @@ public class ExperimentRunner {
                     cfg.getOverWriteInitialWheelchairInventory(), cfg.getDepots());
             boolean overwriteWheelchairs = Boolean.TRUE.equals(cfg.getOverWriteInitialWheelchairInventory())
                     && !wheelchairOverrides.isEmpty();
+            boolean localSearchEnabled = cfg.getLocalSearch() == null || cfg.getLocalSearch();
             return new ExperimentConfig(
                     firstExperiment,
                     normalizedPenalty,
                     normalizedAmountOfDepots,
                     overwriteWheelchairs,
-                    wheelchairOverrides);
+                    wheelchairOverrides,
+                    localSearchEnabled);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed reading experiment config " + experimentPath, e);
         }
@@ -420,18 +423,21 @@ public class ExperimentRunner {
         private final int amountOfDepots;
         private final boolean overwriteInitialWheelchairInventory;
         private final Map<Integer, Integer> initialWheelchairInventoryByDepotId;
+        private final boolean localSearchEnabled;
 
         private ExperimentConfig(
                 String experimentName,
                 int penaltyCoefficient,
                 int amountOfDepots,
                 boolean overwriteInitialWheelchairInventory,
-                Map<Integer, Integer> initialWheelchairInventoryByDepotId) {
+                Map<Integer, Integer> initialWheelchairInventoryByDepotId,
+                boolean localSearchEnabled) {
             this.experimentName = experimentName;
             this.penaltyCoefficient = penaltyCoefficient;
             this.amountOfDepots = amountOfDepots;
             this.overwriteInitialWheelchairInventory = overwriteInitialWheelchairInventory;
             this.initialWheelchairInventoryByDepotId = initialWheelchairInventoryByDepotId;
+            this.localSearchEnabled = localSearchEnabled;
         }
 
         /**
@@ -440,7 +446,7 @@ public class ExperimentRunner {
          */
         static ExperimentConfig defaultConfig(String experimentName) {
             return new ExperimentConfig(
-                    experimentName, DEFAULT_PENALTY_COEFFICIENT, 0, false, Map.of());
+                    experimentName, DEFAULT_PENALTY_COEFFICIENT, 0, false, Map.of(), true);
         }
 
         boolean overwriteInitialWheelchairInventory() {
@@ -459,8 +465,17 @@ public class ExperimentRunner {
     private static class ExperimentFileConfig {
         private Integer penalty;
         private Integer amountOfDepots;
+        private Boolean localSearch;
         private Boolean overWriteInitialWheelchairInventory;
         private List<ExperimentDepotInventoryPatch> depots;
+
+        public Boolean getLocalSearch() {
+            return localSearch;
+        }
+
+        public void setLocalSearch(Boolean localSearch) {
+            this.localSearch = localSearch;
+        }
 
         public Integer getPenalty() {
             return penalty;

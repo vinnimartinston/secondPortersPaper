@@ -23,6 +23,13 @@ public class Simulator {
      * @return {@link SimulationRunResult} with run metadata ({@link SimulationOutputDto}) and {@link Solution}
      */
     public SimulationRunResult start(InputDto inputDto) {
+        return start(inputDto, true);
+    }
+
+    /**
+     * @param localSearchEnabled when {@code true}, each online iteration runs local search after insertion
+     */
+    public SimulationRunResult start(InputDto inputDto, boolean localSearchEnabled) {
         if (inputDto == null || inputDto.getName() == null) {
             return new SimulationRunResult(
                     SimulationOutputDto.error("unknown", "Input or name is null"), null);
@@ -30,7 +37,7 @@ public class Simulator {
 
         Input input = InputMapper.toDomain(inputDto);
 
-        SimulationPolicy policy = new PolicyOne();
+        SimulationPolicy policy = new PolicyOne(localSearchEnabled);
         Solution solution = policy.apply(input);
 
         return new SimulationRunResult(

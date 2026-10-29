@@ -18,11 +18,16 @@ import com.paper2.simulator.solver.LocalSearchSolver;
  * alongside {@code regras}, {@code solver}, etc.
  */
 public class PolicyOne implements SimulationPolicy {
+    private final boolean localSearchEnabled;
     private int indexNextPatient = 0;
-    
+
+    public PolicyOne(boolean localSearchEnabled) {
+        this.localSearchEnabled = localSearchEnabled;
+    }
+
     @Override
     public Solution apply(Input input) {
-        Solver solver = new LocalSearchSolver();
+        Solver solver = new LocalSearchSolver(localSearchEnabled);
         Solution solution = new Solution(input);
         this.indexNextPatient = input.getAmountOfPorters();
         ObjectiveIterationTrace.beginTrace();

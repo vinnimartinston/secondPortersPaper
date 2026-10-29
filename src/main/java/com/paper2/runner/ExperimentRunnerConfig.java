@@ -27,7 +27,7 @@ public class ExperimentRunnerConfig {
      * Experiment JSON files under {@link ExperimentManager#EXPERIMENTS_ROOT} (with or without {@code .json}).
      * If empty, {@link ExperimentRunner} runs every {@code *.json} in that folder (sorted).
      */
-    public static List<String> experiments = List.of("infinity", "default");
+    public static List<String> experiments = List.of("default", "infinity");
 
     /**
      * Parallelism for {@link java.util.concurrent.ForkJoinPool}. If {@code null} or

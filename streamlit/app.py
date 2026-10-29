@@ -3,7 +3,9 @@ Streamlit dashboard: Gantt of final schedules + depot wheelchair balance (from *
 Run from repo root: streamlit run streamlit/app.py
 """
 
-from typing import Callable
+from __future__ import annotations
+
+from typing import Callable, Optional, Tuple
 import json
 from pathlib import Path
 
@@ -15,6 +17,7 @@ import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_ROOT = REPO_ROOT / "files" / "output"
+INPUT_ROOT = REPO_ROOT / "files" / "input"
 
 
 def hms_to_seconds(hms: str) -> int:
@@ -91,6 +94,15 @@ def format_percent(value: float | None) -> str:
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return "—"
     return f"{float(value):.2%}"
+
+
+def format_count(value: float | None) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "—"
+    rounded = round(float(value))
+    if abs(float(value) - rounded) < 1e-9:
+        return str(int(rounded))
+    return f"{float(value):.2f}"
 
 
 def format_minutes(value: float | None) -> str:
@@ -200,7 +212,7 @@ def aggregate_cell_values(
     return aggregate_numeric([extractor(doc) for doc in docs])
 
 
-ComparisonRowSpec = tuple[str, str, Callable[[dict], float | None], Callable[[float | None], str]]
+ComparisonRowSpec = Tuple[str, str, Callable[[dict], Optional[float]], Callable[[Optional[float]], str]]
 
 
 def comparison_row_specs() -> list[ComparisonRowSpec]:
@@ -337,6 +349,31 @@ def comparison_row_specs() -> list[ComparisonRowSpec]:
             lambda d: _wheelchair_depot(d).get("avgWalkingToDepotMinutes"),
             format_minutes,
         ),
+        ("section", "Depot availability", lambda _d: None, lambda _v: ""),
+        (
+            "kpi",
+            "Time at zero — Depot 1",
+            lambda k: (k or {}).get("zero_share", {}).get(1),
+            format_percent,
+        ),
+        (
+            "kpi",
+            "Time at zero — Depot 2",
+            lambda k: (k or {}).get("zero_share", {}).get(2),
+            format_percent,
+        ),
+        (
+            "kpi",
+            "Time at zero — Depot 3",
+            lambda k: (k or {}).get("zero_share", {}).get(3),
+            format_percent,
+        ),
+        (
+            "kpi",
+            "Farther depot visits (no chair at nearest)",
+            lambda k: None if k is None else k.get("farther_depot_visits"),
+            format_count,
+        ),
     ]
 
 
@@ -359,8 +396,18 @@ def build_comparison_display_table(
 
         row = [label]
         for folder_name in folder_names:
+            folder = OUTPUT_ROOT / folder_name
+            if kind == "kpi":
+                kpis = depot_kpis_for_folder(
+                    folder,
+                    per_solution=per_solution,
+                    solution_filename=solution_filename,
+                )
+                cell = formatter(aggregate_cell_values(kpis, extractor)) if kpis else "—"
+                row.append(cell if cell not in (None, "") else "—")
+                continue
             docs = load_metrics_documents(
-                OUTPUT_ROOT / folder_name,
+                folder,
                 per_solution=per_solution,
                 solution_filename=solution_filename,
             )
@@ -537,6 +584,176 @@ def fig_gantt(df: pd.DataFrame, y_categories: list[str]) -> go.Figure:
         ticktext=[seconds_to_hms(t) for t in ticks],
     )
     return fig
+
+
+def _is_wheelchair_pickup(previous_mode: dict, current_mode: dict) -> bool:
+    previous_is_wheelchair = previous_mode.get("type") == "Wheelchair"
+    current_is_wheelchair = current_mode.get("type") == "Wheelchair"
+    return (
+        current_is_wheelchair
+        and not current_mode.get("hasTheEquipmentAtOrigin")
+        and (not previous_is_wheelchair or previous_mode.get("keepsTheEquipmentAtDestination"))
+    )
+
+
+def _travel_seconds(graph: list, from_destination: int, to_origin: int) -> int:
+    return int(graph[from_destination][to_origin])
+
+
+def _nearest_depot(graph: list, from_destination: int, depots: list[dict]) -> tuple[dict, int] | None:
+    best: dict | None = None
+    best_travel = 10**9
+    for depot in depots:
+        location = depot.get("location") or {}
+        origin = location.get("origin")
+        depot_id = depot.get("id")
+        if origin is None or depot_id is None:
+            continue
+        travel = _travel_seconds(graph, from_destination, int(origin))
+        if best is None or travel < best_travel or (travel == best_travel and int(depot_id) < int(best["id"])):
+            best = depot
+            best_travel = travel
+    if best is None:
+        return None
+    return best, best_travel
+
+
+def _balance_at(steps: list, initial: int, second: int) -> int:
+    balance = initial
+    for step in steps:
+        if int(step["timeSeconds"]) <= second:
+            balance = int(step["balanceAfterStep"])
+        else:
+            break
+    return balance
+
+
+def _zero_share(depot_row: dict) -> float | None:
+    summary = depot_row.get("finalTimelineSummary") or {}
+    start = summary.get("windowStartSeconds")
+    end = summary.get("windowEndExclusiveSeconds")
+    steps = summary.get("balanceSteps") or []
+    if start is None or end is None or int(end) <= int(start) or not steps:
+        return None
+    zero_seconds = 0
+    for index, step in enumerate(steps):
+        step_start = max(int(step["timeSeconds"]), int(start))
+        step_end = int(steps[index + 1]["timeSeconds"]) if index + 1 < len(steps) else int(end)
+        step_end = min(step_end, int(end))
+        if step_end > step_start and int(step["balanceAfterStep"]) == 0:
+            zero_seconds += step_end - step_start
+    return zero_seconds / (int(end) - int(start))
+
+
+def _farther_depot_visits(solution: dict, instance: dict) -> int | None:
+    graph = ((instance.get("timeMatrix") or {}).get("graph")) or []
+    depots = instance.get("depots") or []
+    if not graph or not depots:
+        return None
+    inventory_rows = ((solution.get("depotInventory") or {}).get("depots")) or []
+    steps_by_id = {}
+    initial_by_id = {}
+    for row in inventory_rows:
+        depot_id = row.get("depotId")
+        if depot_id is None:
+            continue
+        summary = row.get("finalTimelineSummary") or {}
+        steps_by_id[int(depot_id)] = summary.get("balanceSteps") or []
+        initial_by_id[int(depot_id)] = int(row.get("initialWheelchairInventory") or 0)
+    depots_by_id = {int(depot["id"]): depot for depot in depots if depot.get("id") is not None}
+    farther = 0
+    for schedule in solution.get("finalSchedules") or []:
+        patients = schedule.get("patients") or []
+        for index in range(len(patients) - 1):
+            previous = patients[index]
+            current = patients[index + 1]
+            chosen_id = int(previous.get("depotIdVisitedBeforeNext") or 0)
+            if chosen_id <= 0 or chosen_id not in depots_by_id:
+                continue
+            if not _is_wheelchair_pickup(previous.get("transportMode") or {}, current.get("transportMode") or {}):
+                continue
+            destination = (previous.get("location") or {}).get("destination")
+            end_clock = (previous.get("time") or {}).get("end")
+            if destination is None or not end_clock:
+                continue
+            nearest = _nearest_depot(graph, int(destination), depots)
+            if nearest is None:
+                continue
+            nearest_depot, nearest_travel = nearest
+            nearest_id = int(nearest_depot["id"])
+            chosen_origin = (depots_by_id[chosen_id].get("location") or {}).get("origin")
+            if chosen_origin is None:
+                continue
+            chosen_travel = _travel_seconds(graph, int(destination), int(chosen_origin))
+            if chosen_travel <= nearest_travel or nearest_id not in initial_by_id:
+                continue
+            arrival = hms_to_seconds(end_clock) + nearest_travel
+            if _balance_at(steps_by_id.get(nearest_id, []), initial_by_id[nearest_id], arrival) <= 0:
+                farther += 1
+    return farther
+
+
+def compute_depot_kpis(solution: dict, instance: dict) -> dict | None:
+    rows = ((solution.get("depotInventory") or {}).get("depots")) or []
+    if not rows:
+        return None
+    zero_share = {}
+    for row in rows:
+        depot_id = row.get("depotId")
+        share = _zero_share(row)
+        if depot_id is not None and share is not None:
+            zero_share[int(depot_id)] = share
+    farther = _farther_depot_visits(solution, instance)
+    if not zero_share and farther is None:
+        return None
+    return {"zero_share": zero_share, "farther_depot_visits": farther}
+
+
+@st.cache_data(show_spinner=False)
+def _depot_kpis_cached(
+    solution_path: str,
+    solution_mtime_ns: int,
+    input_path: str,
+    input_mtime_ns: int,
+) -> dict | None:
+    del solution_mtime_ns, input_mtime_ns
+    try:
+        solution = json.loads(Path(solution_path).read_text(encoding="utf-8"))
+        instance = json.loads(Path(input_path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return compute_depot_kpis(solution, instance)
+
+
+def depot_kpis_for_solution_file(solution_path: Path) -> dict | None:
+    stem = solution_stem_for_metrics(solution_path.name)
+    input_path = INPUT_ROOT / f"{stem}.json"
+    if not solution_path.is_file() or not input_path.is_file():
+        return None
+    return _depot_kpis_cached(
+        str(solution_path),
+        solution_path.stat().st_mtime_ns,
+        str(input_path),
+        input_path.stat().st_mtime_ns,
+    )
+
+
+def depot_kpis_for_folder(
+    folder: Path,
+    *,
+    per_solution: bool,
+    solution_filename: str | None,
+) -> list[dict]:
+    if per_solution and solution_filename:
+        paths = [folder / solution_filename]
+    else:
+        paths = list_solution_files(folder)
+    kpis: list[dict] = []
+    for path in paths:
+        computed = depot_kpis_for_solution_file(path)
+        if computed is not None:
+            kpis.append(computed)
+    return kpis
 
 
 def balance_steps_to_plot_xy(steps: list, window_end_exclusive: int) -> tuple[list[float], list[float]]:
@@ -750,6 +967,25 @@ def main() -> None:
         help="Empty = no series; pick one or more depots on the same chart.",
     )
     st.plotly_chart(fig_depots(data.get("depotInventory"), selected), use_container_width=True, theme=None)
+
+    selected_kpis = depot_kpis_for_solution_file(p)
+    if selected_kpis is None:
+        st.caption("Depot availability KPIs need the matching instance under `files/input` and a depot timeline in the solution.")
+    else:
+        zero_share = selected_kpis.get("zero_share") or {}
+        col_depot_1, col_depot_2, col_depot_3, col_farther = st.columns(4)
+        col_depot_1.metric("Depot 1 at zero", format_percent(zero_share.get(1)))
+        col_depot_2.metric("Depot 2 at zero", format_percent(zero_share.get(2)))
+        col_depot_3.metric("Depot 3 at zero", format_percent(zero_share.get(3)))
+        col_farther.metric(
+            "Farther depot visits",
+            format_count(selected_kpis.get("farther_depot_visits")),
+        )
+        st.caption(
+            "Time at zero is the share of the evaluation window with balance exactly 0. "
+            "Farther depot visits count wheelchair pickups sent to a depot with longer travel than the nearest, "
+            "while that nearest depot had no chair at the arrival instant."
+        )
 
     st.caption(
         f"Evaluation window (inventory): {obj_fn.get('evaluationWindowStartClock', '?')} → "
