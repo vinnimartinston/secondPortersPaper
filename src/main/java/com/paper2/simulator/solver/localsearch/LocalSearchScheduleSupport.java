@@ -11,8 +11,9 @@ import com.paper2.domain.RouteTiming;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.domain.TimeObject;
-import com.paper2.metrics.inventory.DepotSelectionByObjective;
 import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
+import com.paper2.metrics.inventory.DepotSelectionByObjective;
+import com.paper2.simulator.InstanceDeadline;
 
 /**
  * Materializes and edits {@code dummy → … → last real} chains on working {@link Schedule}s,
@@ -204,6 +205,7 @@ public final class LocalSearchScheduleSupport {
      * included in violation ledger).
      */
     public static long evaluateCombinedTrialChain(Solution solution, int modifiedScheduleId, List<Patient> trialCopy) {
+        InstanceDeadline.check();
         if (trialCopy.isEmpty()) {
             return evaluateTrialChain(solution, modifiedScheduleId, trialCopy)
                     + depotPenaltyTermForOverrides(solution, modifiedScheduleId, trialCopy);
@@ -220,6 +222,7 @@ public final class LocalSearchScheduleSupport {
      */
     public static long evaluateCombinedTwoTrialChains(
             Solution solution, int id1, List<Patient> c1, int id2, List<Patient> c2) {
+        InstanceDeadline.check();
         if (!c1.isEmpty()) {
             recomputeTimesFromDummy(
                     c1.get(0), solution.getGraph(), solution.getSimulatorClock(), solution, id1);

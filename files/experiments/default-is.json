@@ -1,6 +1,7 @@
 {
   "penalty": 100000,
   "localSearch": false,
+  "nearestDepotIgnoringStock": false,
   "overWriteInitialWheelchairInventory": false,
   "depots":[
     {

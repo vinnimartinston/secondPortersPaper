@@ -14,16 +14,20 @@ import com.paper2.domain.Porter;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
+import com.paper2.simulator.InstanceDeadline;
 
 /**
- * Chooses which depot is used on each route leg so wheelchair stock does not go negative.
+ * Chooses which depot is used on each route leg.
  * <p>
- * For every origin-destination pair of locations, depots are ranked once by detour length
+ * When {@link Solution#isNearestDepotIgnoringStock()} is {@code true}, every depot visit uses the nearest depot
+ * by detour and does not search for a depot that still has wheelchair stock.
+ * <p>
+ * Otherwise, for every origin-destination pair of locations, depots are ranked once by detour length
  * (travel into the depot plus travel out to the destination; ties: lower depot id). Legs are still decided in
  * arrival order, with earlier choices fixed. Each leg tries that ranked list and keeps the first depot that still
  * has stock at the arrival second and does not add violation seconds. Later depots are scored only when the nearer
  * one fails that check. If every depot fails, the leg keeps the one with the fewest violation seconds. Unfixed later
- * legs are omitted from each trial.
+ * legs are omitted from each trial. A visit that does not change wheelchair stock keeps the minimum-travel depot.
  * <p>
  * Use {@link #buildPlan(Solution, List)} to obtain a {@link DepotLegPlan}, then
  * {@link #resolver(DepotLegPlan, List, Graph)} for {@link WheelchairDepotEdgeRules.DepotPerLeg}
@@ -54,6 +58,7 @@ public final class DepotSelectionByObjective {
      *     {@code null} entries mean use the live {@link Schedule} chain
      */
     public static DepotLegPlan buildPlan(Solution solution, List<List<Patient>> chainOverrideByScheduleIndex) {
+        InstanceDeadline.check();
         if (solution == null) {
             return new DepotLegPlan(Map.of());
         }
@@ -66,6 +71,8 @@ public final class DepotSelectionByObjective {
         int n = schedules.size();
         Map<String, Integer> chosenId = new HashMap<>();
         List<LegWork> toDecide = new ArrayList<>();
+        Map<Long, List<Depot>> depotsByOriginDestination = new HashMap<>();
+        boolean nearestDepotIgnoringStock = solution.isNearestDepotIgnoringStock();
         for (int scheduleIndex = 0; scheduleIndex < n; scheduleIndex++) {
             Schedule schedule = schedules.get(scheduleIndex);
             List<Patient> nodes =
@@ -83,6 +90,18 @@ public final class DepotSelectionByObjective {
                     continue;
                 }
                 Depot minTravelDepot = WheelchairDepotEdgeRules.selectDepotForLegMinTravel(previous, depots, graph);
+                if (nearestDepotIgnoringStock) {
+                    Depot nearest =
+                            nearestDepotByDetour(
+                                    depotsByOriginDestination, graph, depots, previous, current);
+                    if (nearest == null) {
+                        nearest = minTravelDepot;
+                    }
+                    if (nearest != null) {
+                        chosenId.put(key(scheduleIndex, legIndex), nearest.getId());
+                    }
+                    continue;
+                }
                 if (WheelchairDepotEdgeRules.netWheelchairDeltaAtDepotVisit(previous, current) == 0) {
                     if (minTravelDepot != null) {
                         chosenId.put(key(scheduleIndex, legIndex), minTravelDepot.getId());
@@ -104,7 +123,6 @@ public final class DepotSelectionByObjective {
                         .thenComparingInt(LegWork::scheduleIndex)
                         .thenComparingInt(LegWork::legIndex));
 
-        Map<Long, List<Depot>> depotsByOriginDestination = new HashMap<>();
         for (LegWork leg : toDecide) {
             Depot best = null;
             long bestViolation = Long.MAX_VALUE;
@@ -151,6 +169,31 @@ public final class DepotSelectionByObjective {
             }
         }
         return new DepotLegPlan(Collections.unmodifiableMap(new HashMap<>(chosenId)));
+    }
+
+    /**
+     * Nearest depot by detour for this leg. Falls back to minimum travel from the previous patient when the
+     * travel matrix or either endpoint location is missing.
+     */
+    private static Depot nearestDepotByDetour(
+            Map<Long, List<Depot>> depotsByOriginDestination,
+            Graph graph,
+            List<Depot> depots,
+            Patient previous,
+            Patient current) {
+        if (previous.getLocation() == null || current.getLocation() == null || graph.getGraph() == null) {
+            return WheelchairDepotEdgeRules.selectDepotForLegMinTravel(previous, depots, graph);
+        }
+        List<Depot> ranked =
+                depotsForLeg(
+                        depotsByOriginDestination,
+                        graph,
+                        depots,
+                        new LegWork(0, 0, previous, current, 0));
+        if (ranked.isEmpty()) {
+            return null;
+        }
+        return ranked.get(0);
     }
 
     /**

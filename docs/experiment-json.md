@@ -12,6 +12,7 @@ Jackson binds JSON into [`ExperimentRunner`’s internal `ExperimentFileConfig`]
 |--------|------|-------------|
 | `penalty` | int (optional) | Coefficient for **wheelchair depot inventory** violations (passed to [`Solution.setDefaultDepotInventoryViolationPenaltyCoefficient`](../src/main/java/com/paper2/domain/Solution.java)). If omitted or non-positive, the runner uses default `100_000`. |
 | `localSearch` | boolean (optional) | When `true` (the default if omitted), each online iteration runs local search after sequential insertion. `false` keeps insertion only. |
+| `nearestDepotIgnoringStock` | boolean (optional) | When `true`, each depot visit uses the nearest depot by detour and skips the search for the nearest depot that still has wheelchair stock. When `false` or omitted, the runner keeps the stock-aware search. |
 | `amountOfDepots` | int (optional) | Parsed from JSON but **not** used by the current runner to choose input folders (instances are read from `files/input/`). Reserved for future use or external tooling. |
 | `overWriteInitialWheelchairInventory` | boolean (optional) | If `true`, the runner replaces each [`DepotDto`](../src/main/java/com/paper2/dto/DepotDto.java) `initialWheelchairInventory` with values from `depots[]` below **when** both the flag is true and at least one valid `{id, initialWheelchairInventory}` patch exists. |
 | `depots` | array (optional) | Sparse patches: objects with `id` and `initialWheelchairInventory`. Only ids present here override the instance JSON when overwrite is enabled. |

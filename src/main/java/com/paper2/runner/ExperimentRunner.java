@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -23,6 +24,8 @@ import com.paper2.dto.InputDto;
 import com.paper2.dto.metrics.ExperimentMetricsDto;
 import com.paper2.metrics.SolutionMetricsCalculator;
 import com.paper2.serialization.SolutionSerializer;
+import com.paper2.simulator.InstanceDeadline;
+import com.paper2.simulator.InstanceTimeLimitExceededException;
 import com.paper2.simulator.SimulationRunResult;
 import com.paper2.simulator.Simulator;
 
@@ -42,11 +45,20 @@ import com.paper2.simulator.Simulator;
  * <p>
  * Before each instance starts, prints a cyan progress line
  * {@code Running Experiment XX/YY (ZZ%)} on the console
- * ({@code ZZ = round(100·XX/YY)}). {@code XX}/{@code YY} count all instance
- * runs across every experiment file when several
- * are configured; with parallelism greater than one, lines may appear out of
+ * ({@code ZZ = round(100·XX/YY)}). {@code XX} is the instance’s position among
+ * every instance run ({@code 1} … {@code YY}), counting instances across every
+ * experiment file. With parallelism greater than one, lines may appear out of
  * order. After each instance finishes successfully,
- * prints a green line {@code Experiment <name> + <instanceStem> - ok}.
+ * prints a green line {@code Experiment <name> - <instanceStem> - OK!}.
+ * Each instance stops after {@link ExperimentRunnerConfig#getInstanceTimeLimitMinutes()}
+ * even when the search has not finished. A timed-out instance writes no solution file.
+ *
+ * <p>
+ * When {@link ExperimentRunnerConfig#getForce()} is {@code false}, an instance
+ * whose {@code *_solution.json} already exists in the experiment output folder
+ * is not executed. When {@code force} is {@code true}, the instance runs even
+ * if that file is present. Stems in {@link #ALWAYS_SKIPPED_INSTANCE_STEMS} are
+ * never executed, in every experiment, even when {@code force} is {@code true}.
  *
  * @see ExperimentManager
  * @see ExperimentRunnerConfig
@@ -54,11 +66,24 @@ import com.paper2.simulator.Simulator;
 public class ExperimentRunner {
     private static final int DEFAULT_PENALTY_COEFFICIENT = 100_000;
 
+    /**
+     * Instance stems (file name without {@code .json}) never executed, in every experiment,
+     * even when {@link ExperimentRunnerConfig#getForce()} is {@code true}.
+     */
+    private static final Set<String> ALWAYS_SKIPPED_INSTANCE_STEMS = Set.of(
+);
+
     /** ANSI cyan foreground (terminal progress line before each instance). */
     private static final String ANSI_CYAN = "\u001B[36m";
 
     /** ANSI green foreground (terminal line after each instance completes). */
     private static final String ANSI_GREEN = "\u001B[32m";
+
+    /** ANSI yellow foreground (terminal line when an existing solution is skipped). */
+    private static final String ANSI_YELLOW = "\u001B[33m";
+
+    /** ANSI red foreground (terminal line when an instance hits the time limit). */
+    private static final String ANSI_RED = "\u001B[31m";
 
     private static final String ANSI_RESET = "\u001B[0m";
 
@@ -148,6 +173,7 @@ public class ExperimentRunner {
         int parallelism = (configuredParallelism != null && configuredParallelism > 0)
                 ? configuredParallelism
                 : Runtime.getRuntime().availableProcessors();
+        boolean force = ExperimentRunnerConfig.getForce();
 
         int instancesPerExperiment = jsonFiles.size();
         int totalInstancesGlobal = instancesPerExperiment * experimentFiles.size();
@@ -162,12 +188,17 @@ public class ExperimentRunner {
                 Files.createDirectories(outputDir);
 
                 System.out.printf(
-                        "Experiment %s | %d instance(s) | parallelism=%d | penalty=%d | localSearch=%s | out=%s%n",
+                        "Experiment %s | %d instance(s) | parallelism=%d | penalty=%d | "
+                                + "localSearch=%s | nearestDepotIgnoringStock=%s | force=%s | "
+                                + "instanceTimeLimitMin=%d | out=%s%n",
                         experimentConfig.experimentName,
                         jsonFiles.size(),
                         parallelism,
                         penaltyCoefficient,
                         experimentConfig.localSearchEnabled,
+                        experimentConfig.nearestDepotIgnoringStock,
+                        force,
+                        ExperimentRunnerConfig.getInstanceTimeLimitMinutes(),
                         outputDir.toAbsolutePath());
 
                 final int experimentIndexZeroBased = experimentOrdinal++;
@@ -179,8 +210,9 @@ public class ExperimentRunner {
                                                 jsonFiles.get(i),
                                                 outputDir,
                                                 experimentConfig,
-                                                experimentIndexZeroBased + 1,
-                                                totalInstancesGlobal)))
+                                                experimentIndexZeroBased * instancesPerExperiment + i + 1,
+                                                totalInstancesGlobal,
+                                                force)))
                         .get();
             }
         }
@@ -202,13 +234,35 @@ public class ExperimentRunner {
      *                              logging
      * @param totalInstances        total instance runs
      *                              ({@code jsonFiles × experimentFiles})
+     * @param force                 when {@code false}, skip this instance if its solution file already exists
      */
     private void runOne(
             Path inputPath,
             Path outputDir,
             ExperimentConfig experimentConfig,
             int instanceIndexOneBased,
-            int totalInstances) {
+            int totalInstances,
+            boolean force) {
+        String stem = baseName(inputPath);
+        if (ALWAYS_SKIPPED_INSTANCE_STEMS.contains(stem)) {
+            printInstanceSkipped(
+                    experimentConfig.experimentName,
+                    stem,
+                    instanceIndexOneBased,
+                    totalInstances,
+                    "always skipped");
+            return;
+        }
+        Path solutionFile = outputDir.resolve(stem + "_solution.json");
+        if (!force && Files.isRegularFile(solutionFile)) {
+            printInstanceSkipped(
+                    experimentConfig.experimentName,
+                    stem,
+                    instanceIndexOneBased,
+                    totalInstances,
+                    "solution exists");
+            return;
+        }
         printInstanceProgress(instanceIndexOneBased, totalInstances);
         try {
             InputDto input = objectMapper.readValue(inputPath.toFile(), InputDto.class);
@@ -217,11 +271,27 @@ public class ExperimentRunner {
                     experimentConfig.overwriteInitialWheelchairInventory(),
                     experimentConfig.initialWheelchairInventoryByDepotId());
             long t0 = System.nanoTime();
-            SimulationRunResult run = simulator.start(input, experimentConfig.localSearchEnabled);
+            int timeLimitMinutes = ExperimentRunnerConfig.getInstanceTimeLimitMinutes();
+            InstanceDeadline.armMinutes(timeLimitMinutes);
+            SimulationRunResult run;
+            try {
+                run = simulator.start(
+                        input,
+                        experimentConfig.localSearchEnabled,
+                        experimentConfig.nearestDepotIgnoringStock);
+            } catch (InstanceTimeLimitExceededException ex) {
+                printInstanceTimedOut(
+                        experimentConfig.experimentName,
+                        stem,
+                        instanceIndexOneBased,
+                        totalInstances,
+                        timeLimitMinutes);
+                return;
+            } finally {
+                InstanceDeadline.clear();
+            }
             double wallSeconds = (System.nanoTime() - t0) / 1_000_000_000.0;
-            String stem = baseName(inputPath);
             if (run.getSolution() != null) {
-                Path solutionFile = outputDir.resolve(stem + "_solution.json");
                 SolutionSerializer.write(solutionFile, run.getSolution());
                 System.out.println("Wrote " + solutionFile.toAbsolutePath());
                 ExperimentMetricsDto metrics = SolutionMetricsCalculator.compute(run.getSolution(), input, wallSeconds);
@@ -237,22 +307,75 @@ public class ExperimentRunner {
 
     /**
      * Prints {@code Running Experiment XX/YY (ZZ%)} in ANSI cyan (foreground
-     * {@code 36}); {@code ZZ} is
-     * {@code round(100·XX/YY)} for the batch position {@code XX}.
+     * {@code 36}). {@code XX} is this instance’s position among all instance runs;
+     * {@code ZZ} is {@code round(100·XX/YY)}.
      */
     private static void printInstanceProgress(int instanceIndexOneBased, int totalInstances) {
-        int zz = totalInstances <= 0
-                ? 0
-                : (int) Math.round(100.0 * instanceIndexOneBased / totalInstances);
         synchronized (INSTANCE_PROGRESS_PRINT_LOCK) {
             System.out.printf(
                     "%sRunning Experiment %d/%d (%d%%)%s%n",
                     ANSI_CYAN,
                     instanceIndexOneBased,
                     totalInstances,
-                    zz,
+                    progressPercent(instanceIndexOneBased, totalInstances),
                     ANSI_RESET);
         }
+    }
+
+    /**
+     * Prints a yellow skip line with the same instance position {@code XX/YY (ZZ%)} as
+     * {@link #printInstanceProgress}. {@code reason} is the short suffix after the dash.
+     */
+    private static void printInstanceSkipped(
+            String experimentName,
+            String instanceStem,
+            int instanceIndexOneBased,
+            int totalInstances,
+            String reason) {
+        synchronized (INSTANCE_PROGRESS_PRINT_LOCK) {
+            System.out.printf(
+                    "%sSkipping %s - %s (%d/%d, %d%%) - %s%s%n",
+                    ANSI_YELLOW,
+                    experimentName,
+                    instanceStem,
+                    instanceIndexOneBased,
+                    totalInstances,
+                    progressPercent(instanceIndexOneBased, totalInstances),
+                    reason,
+                    ANSI_RESET);
+        }
+    }
+
+    /**
+     * Prints a red line when the instance is stopped because {@code timeLimitMinutes} elapsed
+     * before the search finished.
+     */
+    private static void printInstanceTimedOut(
+            String experimentName,
+            String instanceStem,
+            int instanceIndexOneBased,
+            int totalInstances,
+            int timeLimitMinutes) {
+        synchronized (INSTANCE_PROGRESS_PRINT_LOCK) {
+            System.out.printf(
+                    "%sTimed out %s - %s (%d/%d, %d%%) - %d min%s%n",
+                    ANSI_RED,
+                    experimentName,
+                    instanceStem,
+                    instanceIndexOneBased,
+                    totalInstances,
+                    progressPercent(instanceIndexOneBased, totalInstances),
+                    timeLimitMinutes,
+                    ANSI_RESET);
+        }
+    }
+
+    /** {@code round(100·instanceIndex/totalInstances)}, or {@code 0} when the total is not positive. */
+    private static int progressPercent(int instanceIndexOneBased, int totalInstances) {
+        if (totalInstances <= 0) {
+            return 0;
+        }
+        return (int) Math.round(100.0 * instanceIndexOneBased / totalInstances);
     }
 
     /**
@@ -394,13 +517,15 @@ public class ExperimentRunner {
             boolean overwriteWheelchairs = Boolean.TRUE.equals(cfg.getOverWriteInitialWheelchairInventory())
                     && !wheelchairOverrides.isEmpty();
             boolean localSearchEnabled = cfg.getLocalSearch() == null || cfg.getLocalSearch();
+            boolean nearestDepotIgnoringStock = Boolean.TRUE.equals(cfg.getNearestDepotIgnoringStock());
             return new ExperimentConfig(
                     firstExperiment,
                     normalizedPenalty,
                     normalizedAmountOfDepots,
                     overwriteWheelchairs,
                     wheelchairOverrides,
-                    localSearchEnabled);
+                    localSearchEnabled,
+                    nearestDepotIgnoringStock);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed reading experiment config " + experimentPath, e);
         }
@@ -424,6 +549,7 @@ public class ExperimentRunner {
         private final boolean overwriteInitialWheelchairInventory;
         private final Map<Integer, Integer> initialWheelchairInventoryByDepotId;
         private final boolean localSearchEnabled;
+        private final boolean nearestDepotIgnoringStock;
 
         private ExperimentConfig(
                 String experimentName,
@@ -431,13 +557,15 @@ public class ExperimentRunner {
                 int amountOfDepots,
                 boolean overwriteInitialWheelchairInventory,
                 Map<Integer, Integer> initialWheelchairInventoryByDepotId,
-                boolean localSearchEnabled) {
+                boolean localSearchEnabled,
+                boolean nearestDepotIgnoringStock) {
             this.experimentName = experimentName;
             this.penaltyCoefficient = penaltyCoefficient;
             this.amountOfDepots = amountOfDepots;
             this.overwriteInitialWheelchairInventory = overwriteInitialWheelchairInventory;
             this.initialWheelchairInventoryByDepotId = initialWheelchairInventoryByDepotId;
             this.localSearchEnabled = localSearchEnabled;
+            this.nearestDepotIgnoringStock = nearestDepotIgnoringStock;
         }
 
         /**
@@ -446,7 +574,7 @@ public class ExperimentRunner {
          */
         static ExperimentConfig defaultConfig(String experimentName) {
             return new ExperimentConfig(
-                    experimentName, DEFAULT_PENALTY_COEFFICIENT, 0, false, Map.of(), true);
+                    experimentName, DEFAULT_PENALTY_COEFFICIENT, 0, false, Map.of(), true, false);
         }
 
         boolean overwriteInitialWheelchairInventory() {
@@ -466,6 +594,7 @@ public class ExperimentRunner {
         private Integer penalty;
         private Integer amountOfDepots;
         private Boolean localSearch;
+        private Boolean nearestDepotIgnoringStock;
         private Boolean overWriteInitialWheelchairInventory;
         private List<ExperimentDepotInventoryPatch> depots;
 
@@ -475,6 +604,14 @@ public class ExperimentRunner {
 
         public void setLocalSearch(Boolean localSearch) {
             this.localSearch = localSearch;
+        }
+
+        public Boolean getNearestDepotIgnoringStock() {
+            return nearestDepotIgnoringStock;
+        }
+
+        public void setNearestDepotIgnoringStock(Boolean nearestDepotIgnoringStock) {
+            this.nearestDepotIgnoringStock = nearestDepotIgnoringStock;
         }
 
         public Integer getPenalty() {

@@ -6,6 +6,7 @@ import com.paper2.domain.Patient;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.metrics.WheelchairDepotViolationSecondsCalculator;
+import com.paper2.simulator.InstanceDeadline;
 
 /**
  * Routing objective components: unweighted tardiness plus a soft penalty for wheelchair depot under-stock
@@ -46,6 +47,7 @@ public final class TotalUnweightedTardinessObjective {
      * Unweighted tardiness plus {@code depotViolationSeconds × depotInventoryViolationPenaltyCoefficient}.
      */
     public static long evaluateCombined(Solution solution) {
+        InstanceDeadline.check();
         long tardinessSumSeconds = evaluate(solution);
         long depotViolationSeconds =
                 WheelchairDepotViolationSecondsCalculator.totalViolationSecondsAcrossDepots(solution);

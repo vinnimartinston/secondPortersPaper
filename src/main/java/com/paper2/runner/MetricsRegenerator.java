@@ -118,6 +118,7 @@ public final class MetricsRegenerator {
 
         Input input = InputMapper.toDomain(inputDto);
         Solution solution = SolutionExportRestorer.restore(input, exported, penaltyCoefficient);
+        solution.setNearestDepotIgnoringStock(experiment.nearestDepotIgnoringStock());
         ExperimentMetricsDto metrics =
                 SolutionMetricsCalculator.compute(solution, inputDto, preservedWallSeconds);
 
@@ -159,7 +160,8 @@ public final class MetricsRegenerator {
             return new ExperimentSettings(
                     normalizedPenalty,
                     Boolean.TRUE.equals(cfg.getOverWriteInitialWheelchairInventory()),
-                    wheelchairOverrides);
+                    wheelchairOverrides,
+                    Boolean.TRUE.equals(cfg.getNearestDepotIgnoringStock()));
         } catch (IOException e) {
             throw new UncheckedIOException("Failed reading experiment config " + experimentPath, e);
         }
@@ -224,10 +226,11 @@ public final class MetricsRegenerator {
     private record ExperimentSettings(
             int penaltyCoefficient,
             boolean overwriteInitialWheelchairInventory,
-            Map<Integer, Integer> initialWheelchairInventoryByDepotId) {
+            Map<Integer, Integer> initialWheelchairInventoryByDepotId,
+            boolean nearestDepotIgnoringStock) {
 
         static ExperimentSettings defaults() {
-            return new ExperimentSettings(DEFAULT_PENALTY_COEFFICIENT, false, Map.of());
+            return new ExperimentSettings(DEFAULT_PENALTY_COEFFICIENT, false, Map.of(), false);
         }
     }
 
@@ -235,6 +238,7 @@ public final class MetricsRegenerator {
 
     private static class ExperimentFileConfig {
         private Integer penalty;
+        private Boolean nearestDepotIgnoringStock;
         private Boolean overWriteInitialWheelchairInventory;
         private List<ExperimentDepotInventoryPatch> depots;
 
@@ -244,6 +248,14 @@ public final class MetricsRegenerator {
 
         public void setPenalty(Integer penalty) {
             this.penalty = penalty;
+        }
+
+        public Boolean getNearestDepotIgnoringStock() {
+            return nearestDepotIgnoringStock;
+        }
+
+        public void setNearestDepotIgnoringStock(Boolean nearestDepotIgnoringStock) {
+            this.nearestDepotIgnoringStock = nearestDepotIgnoringStock;
         }
 
         public Boolean getOverWriteInitialWheelchairInventory() {

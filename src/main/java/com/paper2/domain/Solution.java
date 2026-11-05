@@ -37,6 +37,11 @@ public class Solution {
     private int depotInventoryViolationPenaltyCoefficient = defaultDepotInventoryViolationPenaltyCoefficient;
     /** Committed and per-iteration working wheelchair timelines at depots (soft inventory). */
     private SolutionInventoryState inventoryState;
+    /**
+     * When {@code true}, each depot visit uses the nearest depot by detour and skips the search for the
+     * nearest depot that still has wheelchair stock.
+     */
+    private boolean nearestDepotIgnoringStock;
 
     /**
      * Static patient definition in this instance (same list as source {@link Input}), or {@code null} if

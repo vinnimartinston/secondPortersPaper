@@ -30,6 +30,16 @@ public class Simulator {
      * @param localSearchEnabled when {@code true}, each online iteration runs local search after insertion
      */
     public SimulationRunResult start(InputDto inputDto, boolean localSearchEnabled) {
+        return start(inputDto, localSearchEnabled, false);
+    }
+
+    /**
+     * @param localSearchEnabled when {@code true}, each online iteration runs local search after insertion
+     * @param nearestDepotIgnoringStock when {@code true}, each depot visit uses the nearest depot and skips
+     *        the search for the nearest depot that still has wheelchair stock
+     */
+    public SimulationRunResult start(
+            InputDto inputDto, boolean localSearchEnabled, boolean nearestDepotIgnoringStock) {
         if (inputDto == null || inputDto.getName() == null) {
             return new SimulationRunResult(
                     SimulationOutputDto.error("unknown", "Input or name is null"), null);
@@ -37,7 +47,7 @@ public class Simulator {
 
         Input input = InputMapper.toDomain(inputDto);
 
-        SimulationPolicy policy = new PolicyOne(localSearchEnabled);
+        SimulationPolicy policy = new PolicyOne(localSearchEnabled, nearestDepotIgnoringStock);
         Solution solution = policy.apply(input);
 
         return new SimulationRunResult(

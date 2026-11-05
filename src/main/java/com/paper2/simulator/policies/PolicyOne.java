@@ -6,6 +6,7 @@ import com.paper2.domain.Patient;
 import com.paper2.domain.Schedule;
 import com.paper2.domain.Solution;
 import com.paper2.domain.TimeObject;
+import com.paper2.simulator.InstanceDeadline;
 import com.paper2.simulator.SimulationPolicy;
 import com.paper2.simulator.Solver;
 import com.paper2.simulator.debug.ObjectiveIterationTrace;
@@ -19,21 +20,29 @@ import com.paper2.simulator.solver.LocalSearchSolver;
  */
 public class PolicyOne implements SimulationPolicy {
     private final boolean localSearchEnabled;
+    private final boolean nearestDepotIgnoringStock;
     private int indexNextPatient = 0;
 
     public PolicyOne(boolean localSearchEnabled) {
+        this(localSearchEnabled, false);
+    }
+
+    public PolicyOne(boolean localSearchEnabled, boolean nearestDepotIgnoringStock) {
         this.localSearchEnabled = localSearchEnabled;
+        this.nearestDepotIgnoringStock = nearestDepotIgnoringStock;
     }
 
     @Override
     public Solution apply(Input input) {
         Solver solver = new LocalSearchSolver(localSearchEnabled);
         Solution solution = new Solution(input);
+        solution.setNearestDepotIgnoringStock(nearestDepotIgnoringStock);
         this.indexNextPatient = input.getAmountOfPorters();
         ObjectiveIterationTrace.beginTrace();
 
         int onlineIteration = 0;
         while (shouldContinueOnlineLoop(input, solution)) {
+            InstanceDeadline.check();
             int iterationAnchorSeconds = solution.getSimulatorClock().getSeconds();
             solution.getInventoryState().setIterationAnchorSeconds(iterationAnchorSeconds);
             solution.rebuildWorkingInventory();
